@@ -51,7 +51,7 @@
 
 ## Phase 1: 基礎設施建立
 
-**目標**: 建立資料庫、認證、API 框架、Redis 快取、Logger、成本追蹤
+**目標**: 建立資料庫、認證、API 框架、Redis 快取、Logger、成本與效能追蹤
 
 **資料夾**: `phase-1-infrastructure/`
 
@@ -62,7 +62,7 @@
 | 1.3 | [task-1.3-api-framework.md](./phase-1-infrastructure/task-1.3-api-framework.md) | 建立 API 基礎架構 | 3-4 小時 | ✅ 文件完成 |
 | 1.4 | [task-1.4-redis-setup.md](./phase-1-infrastructure/task-1.4-redis-setup.md) | Redis 快取設定 | 2-3 小時 | ✅ 文件完成 |
 | 1.5 | [task-1.5-logger-service.md](./phase-1-infrastructure/task-1.5-logger-service.md) | Logger 服務實作 | 4-5 小時 | ✅ 文件完成 |
-| 1.6 | [task-1.6-cost-tracker.md](./phase-1-infrastructure/task-1.6-cost-tracker.md) | 成本追蹤服務 | 3-4 小時 | ✅ 文件完成 |
+| 1.6 | [task-1.6-cost-performance-tracker.md](./phase-1-infrastructure/task-1.6-cost-performance-tracker.md) | 成本與效能追蹤服務 | 5-6 小時 | ✅ 文件完成 |
 
 **Phase 1 完成標準**:
 - [ ] 資料庫 Schema 建立完成
@@ -72,7 +72,7 @@
 - [ ] Redis 快取正常運作
 - [ ] 背景任務佇列已設定
 - [ ] Logger 服務正常運作
-- [ ] 成本追蹤正確記錄
+- [ ] 成本與效能追蹤正確記錄
 
 ---
 
