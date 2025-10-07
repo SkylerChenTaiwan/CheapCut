@@ -64,13 +64,14 @@
 
 ## 🎯 功能描述
 
-實作成本追蹤服務,記錄所有 AI API 使用量並計算成本。
+實作成本追蹤服務,記錄所有 AI API 使用量並計算成本,並提供成本告警機制。
 
 ### 為什麼需要這個?
 
 - 🎯 **問題**: 不知道每個功能花費多少成本,無法優化
 - ✅ **解決**: 詳細追蹤每個 AI 呼叫的成本,找出花費最高的地方
 - 💡 **比喻**: 就像記帳 app,記錄每筆開支,月底才知道錢花去哪裡
+- ⚠️ **告警**: 當成本超過閾值時,自動發送 Email/Slack 通知
 
 ### 根據 Overall Design
 
@@ -79,6 +80,7 @@
 - 計算每次呼叫的成本
 - 聚合統計每日/每月成本
 - 找出成本優化機會
+- **成本超過閾值時自動告警** (新增)
 
 ### 完成後你會有:
 
@@ -87,6 +89,9 @@
 - ✅ 成本計算函數
 - ✅ 成本報表 API
 - ✅ 成本統計與分析
+- ✅ **成本閾值配置** (新增)
+- ✅ **成本告警服務** (新增)
+- ✅ **預算管理 API** (新增)
 
 ---
 
@@ -196,6 +201,36 @@ psql $DATABASE_URL -c "\dt api_costs"
 # 安裝套件
 npm install tiktoken
 ```
+
+---
+
+### 4. 成本告警機制
+
+**何時需要告警**:
+- 用戶單日成本超過閾值
+- 用戶月度成本超過預算
+- 單次執行成本異常高
+- 系統總成本超過預算
+
+**告警方式**:
+```typescript
+// Email 通知
+await alertService.sendEmail({
+  to: 'admin@cheapcut.com',
+  subject: '成本告警: 用戶超過每日限額',
+  body: `用戶 ${userId} 今日成本: $${totalCost}, 超過限額: $${threshold}`
+})
+
+// Slack 通知
+await alertService.sendSlack({
+  channel: '#cost-alerts',
+  message: `⚠️ 成本告警: 執行 ${executionId} 花費 $${cost}, 超過閾值 $${threshold}`
+})
+```
+
+**告警頻率控制**:
+- 同一用戶/執行,1 小時內最多告警 1 次
+- 避免告警轟炸
 
 ---
 
@@ -767,7 +802,619 @@ export default getCostTracker
 
 ---
 
-### Step 4: 整合到 AILogger
+### Step 4: 實作成本閾值配置
+
+建立 `src/config/cost-thresholds.ts`:
+
+```typescript
+/**
+ * 成本閾值配置
+ *
+ * 用於成本告警系統
+ */
+
+/**
+ * 系統預設閾值
+ */
+export const DefaultCostThresholds = {
+  /**
+   * 用戶每日成本限額 (美元)
+   * 超過此金額將觸發告警
+   */
+  userDailyLimit: 10.0,
+
+  /**
+   * 用戶每月成本限額 (美元)
+   */
+  userMonthlyLimit: 100.0,
+
+  /**
+   * 單次執行成本限額 (美元)
+   * 超過此金額將觸發告警
+   */
+  executionLimit: 5.0,
+
+  /**
+   * 系統每日總成本限額 (美元)
+   */
+  systemDailyLimit: 500.0,
+
+  /**
+   * 系統每月總成本限額 (美元)
+   */
+  systemMonthlyLimit: 5000.0,
+} as const
+
+/**
+ * 用戶成本閾值介面
+ */
+export interface UserCostThreshold {
+  user_id: string
+  daily_limit?: number
+  monthly_limit?: number
+  execution_limit?: number
+}
+
+/**
+ * 取得用戶成本閾值
+ *
+ * @param userId 用戶 ID
+ * @returns 用戶閾值 (如果沒有自訂,回傳預設值)
+ */
+export async function getUserThresholds(
+  userId: string
+): Promise<UserCostThreshold> {
+  // TODO: 從資料庫查詢用戶自訂閾值
+  // const customThresholds = await db.user_cost_thresholds.findUnique({
+  //   where: { user_id: userId }
+  // })
+
+  // 目前先回傳預設值
+  return {
+    user_id: userId,
+    daily_limit: DefaultCostThresholds.userDailyLimit,
+    monthly_limit: DefaultCostThresholds.userMonthlyLimit,
+    execution_limit: DefaultCostThresholds.executionLimit,
+  }
+}
+
+/**
+ * 取得系統成本閾值
+ */
+export function getSystemThresholds() {
+  return {
+    daily_limit: DefaultCostThresholds.systemDailyLimit,
+    monthly_limit: DefaultCostThresholds.systemMonthlyLimit,
+  }
+}
+```
+
+---
+
+### Step 5: 實作告警服務
+
+建立 `src/services/alert.service.ts`:
+
+```typescript
+/**
+ * 告警服務
+ *
+ * 支援 Email 和 Slack 通知
+ */
+
+import { createLogger } from './logger.service'
+
+const logger = createLogger('AlertService')
+
+/**
+ * Email 告警參數
+ */
+export interface EmailAlertParams {
+  to: string
+  subject: string
+  body: string
+  html?: string
+}
+
+/**
+ * Slack 告警參數
+ */
+export interface SlackAlertParams {
+  channel: string
+  message: string
+  fields?: Record<string, string>
+}
+
+/**
+ * 成本告警參數
+ */
+export interface CostAlertParams {
+  alertType: 'user_daily' | 'user_monthly' | 'execution' | 'system_daily' | 'system_monthly'
+  userId?: string
+  executionId?: string
+  currentCost: number
+  threshold: number
+  breakdown?: Record<string, any>
+}
+
+/**
+ * 告警服務類別
+ */
+export class AlertService {
+  /**
+   * 發送 Email 告警
+   */
+  async sendEmail(params: EmailAlertParams): Promise<void> {
+    try {
+      // TODO: 整合 SendGrid 或其他 Email 服務
+      logger.info('send_email_alert', {
+        to: params.to,
+        subject: params.subject,
+      })
+
+      // 暫時記錄到 console
+      console.log('[AlertService] Email Alert:', {
+        to: params.to,
+        subject: params.subject,
+        body: params.body,
+      })
+    } catch (error) {
+      logger.error('send_email_failed', {
+        error: (error as Error).message,
+      })
+    }
+  }
+
+  /**
+   * 發送 Slack 告警
+   */
+  async sendSlack(params: SlackAlertParams): Promise<void> {
+    try {
+      const slackWebhookUrl = process.env.SLACK_WEBHOOK_URL
+
+      if (!slackWebhookUrl) {
+        logger.warn('slack_webhook_not_configured')
+        return
+      }
+
+      // 構建 Slack 訊息格式
+      const payload = {
+        channel: params.channel,
+        text: params.message,
+        attachments: params.fields
+          ? [
+              {
+                color: 'danger',
+                fields: Object.entries(params.fields).map(([key, value]) => ({
+                  title: key,
+                  value,
+                  short: true,
+                })),
+              },
+            ]
+          : undefined,
+      }
+
+      // 發送到 Slack
+      const response = await fetch(slackWebhookUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+
+      if (!response.ok) {
+        throw new Error(`Slack API error: ${response.statusText}`)
+      }
+
+      logger.info('send_slack_alert', {
+        channel: params.channel,
+      })
+    } catch (error) {
+      logger.error('send_slack_failed', {
+        error: (error as Error).message,
+      })
+    }
+  }
+
+  /**
+   * 發送成本告警
+   */
+  async sendCostAlert(params: CostAlertParams): Promise<void> {
+    const {
+      alertType,
+      userId,
+      executionId,
+      currentCost,
+      threshold,
+      breakdown,
+    } = params
+
+    // 構建告警訊息
+    let subject = ''
+    let message = ''
+
+    switch (alertType) {
+      case 'user_daily':
+        subject = `⚠️ 成本告警: 用戶每日成本超過限額`
+        message = `用戶 ${userId} 今日成本: $${currentCost.toFixed(4)}, 超過限額: $${threshold.toFixed(4)}`
+        break
+
+      case 'user_monthly':
+        subject = `⚠️ 成本告警: 用戶每月成本超過預算`
+        message = `用戶 ${userId} 本月成本: $${currentCost.toFixed(4)}, 超過預算: $${threshold.toFixed(4)}`
+        break
+
+      case 'execution':
+        subject = `⚠️ 成本告警: 單次執行成本異常高`
+        message = `執行 ${executionId} 成本: $${currentCost.toFixed(4)}, 超過閾值: $${threshold.toFixed(4)}`
+        break
+
+      case 'system_daily':
+        subject = `🚨 系統告警: 每日總成本超過限額`
+        message = `系統今日總成本: $${currentCost.toFixed(4)}, 超過限額: $${threshold.toFixed(4)}`
+        break
+
+      case 'system_monthly':
+        subject = `🚨 系統告警: 每月總成本超過預算`
+        message = `系統本月總成本: $${currentCost.toFixed(4)}, 超過預算: $${threshold.toFixed(4)}`
+        break
+    }
+
+    // 發送 Email
+    await this.sendEmail({
+      to: process.env.ADMIN_EMAIL || 'admin@cheapcut.com',
+      subject,
+      body: message + (breakdown ? `\n\n成本分布:\n${JSON.stringify(breakdown, null, 2)}` : ''),
+    })
+
+    // 發送 Slack
+    await this.sendSlack({
+      channel: '#cost-alerts',
+      message: subject,
+      fields: {
+        'Alert Type': alertType,
+        'User ID': userId || 'N/A',
+        'Execution ID': executionId || 'N/A',
+        'Current Cost': `$${currentCost.toFixed(4)}`,
+        'Threshold': `$${threshold.toFixed(4)}`,
+      },
+    })
+
+    logger.info('cost_alert_sent', {
+      alert_type: alertType,
+      user_id: userId,
+      execution_id: executionId,
+      current_cost: currentCost,
+      threshold,
+    })
+  }
+
+  /**
+   * 檢查是否應該發送告警
+   *
+   * 避免告警轟炸,同一用戶/執行 1 小時內最多告警 1 次
+   */
+  async shouldSendAlert(
+    alertKey: string,
+    cooldownMinutes: number = 60
+  ): Promise<boolean> {
+    // TODO: 使用 Redis 記錄最後告警時間
+    // const lastAlertTime = await redis.get(`alert:${alertKey}`)
+    // if (lastAlertTime) {
+    //   const elapsed = Date.now() - parseInt(lastAlertTime)
+    //   if (elapsed < cooldownMinutes * 60 * 1000) {
+    //     return false
+    //   }
+    // }
+    // await redis.set(`alert:${alertKey}`, Date.now().toString(), 'EX', cooldownMinutes * 60)
+
+    // 目前先直接回傳 true (每次都告警)
+    return true
+  }
+}
+
+/**
+ * 建立告警服務單例
+ */
+let alertService: AlertService | null = null
+
+export function getAlertService(): AlertService {
+  if (!alertService) {
+    alertService = new AlertService()
+  }
+  return alertService
+}
+
+export default getAlertService
+```
+
+---
+
+### Step 6: 整合到 CostTracker
+
+修改 `src/services/cost-tracker.service.ts`,加入成本檢查與告警:
+
+```typescript
+import { getAlertService } from './alert.service'
+import { getUserThresholds, getSystemThresholds } from '../config/cost-thresholds'
+
+/**
+ * 成本追蹤服務類別 (擴充版)
+ */
+export class CostTracker {
+  private alertService = getAlertService()
+
+  /**
+   * 寫入成本記錄到資料庫 (擴充版,含告警)
+   *
+   * @param record 成本記錄
+   */
+  private async recordCost(record: APICostRecord): Promise<void> {
+    try {
+      await db.api_costs.create({
+        data: {
+          user_id: record.user_id,
+          execution_id: record.execution_id,
+          service: record.service,
+          operation: record.operation,
+          model: record.model,
+          usage: record.usage,
+          cost: record.cost,
+          metadata: record.metadata || {},
+        },
+      })
+
+      console.log(
+        `[CostTracker] Recorded: ${record.service} ${record.operation} = $${record.cost.toFixed(4)}`
+      )
+
+      // 記錄成本後,檢查是否超過閾值
+      await this.checkCostThresholds(record)
+    } catch (error) {
+      console.error('[CostTracker] Failed to record cost:', error)
+    }
+  }
+
+  /**
+   * 檢查成本閾值並發送告警
+   *
+   * @param record 成本記錄
+   */
+  private async checkCostThresholds(record: APICostRecord): Promise<void> {
+    try {
+      // 1. 檢查單次執行成本
+      if (record.execution_id && record.user_id) {
+        const executionCost = await this.getExecutionTotalCost(record.execution_id)
+        const thresholds = await getUserThresholds(record.user_id)
+
+        if (thresholds.execution_limit && executionCost > thresholds.execution_limit) {
+          const alertKey = `execution:${record.execution_id}`
+          if (await this.alertService.shouldSendAlert(alertKey)) {
+            await this.alertService.sendCostAlert({
+              alertType: 'execution',
+              userId: record.user_id,
+              executionId: record.execution_id,
+              currentCost: executionCost,
+              threshold: thresholds.execution_limit,
+            })
+          }
+        }
+      }
+
+      // 2. 檢查用戶每日成本
+      if (record.user_id) {
+        const today = new Date()
+        today.setHours(0, 0, 0, 0)
+        const dailyCost = await this.getUserTotalCost(record.user_id, today)
+        const thresholds = await getUserThresholds(record.user_id)
+
+        if (thresholds.daily_limit && dailyCost > thresholds.daily_limit) {
+          const alertKey = `user_daily:${record.user_id}:${today.toISOString().split('T')[0]}`
+          if (await this.alertService.shouldSendAlert(alertKey)) {
+            await this.alertService.sendCostAlert({
+              alertType: 'user_daily',
+              userId: record.user_id,
+              currentCost: dailyCost,
+              threshold: thresholds.daily_limit,
+            })
+          }
+        }
+      }
+
+      // 3. 檢查系統每日成本 (每小時最多檢查一次)
+      const today = new Date()
+      today.setHours(0, 0, 0, 0)
+      const systemDailyCost = await this.getSystemTotalCost(today)
+      const systemThresholds = getSystemThresholds()
+
+      if (systemDailyCost > systemThresholds.daily_limit) {
+        const alertKey = `system_daily:${today.toISOString().split('T')[0]}`
+        if (await this.alertService.shouldSendAlert(alertKey, 60)) {
+          await this.alertService.sendCostAlert({
+            alertType: 'system_daily',
+            currentCost: systemDailyCost,
+            threshold: systemThresholds.daily_limit,
+          })
+        }
+      }
+    } catch (error) {
+      console.error('[CostTracker] Failed to check cost thresholds:', error)
+      // 不要因為告警失敗而影響主流程
+    }
+  }
+
+  /**
+   * 查詢執行總成本
+   *
+   * @param executionId 執行 ID
+   * @returns 總成本
+   */
+  async getExecutionTotalCost(executionId: string): Promise<number> {
+    const result = await db.api_costs.aggregate({
+      where: { execution_id: executionId },
+      _sum: { cost: true },
+    })
+    return result._sum.cost || 0
+  }
+
+  /**
+   * 查詢系統總成本
+   *
+   * @param startDate 開始日期
+   * @param endDate 結束日期
+   * @returns 總成本
+   */
+  async getSystemTotalCost(startDate?: Date, endDate?: Date): Promise<number> {
+    const where: any = {}
+    if (startDate || endDate) {
+      where.created_at = {}
+      if (startDate) where.created_at.gte = startDate
+      if (endDate) where.created_at.lte = endDate
+    }
+
+    const result = await db.api_costs.aggregate({
+      where,
+      _sum: { cost: true },
+    })
+    return result._sum.cost || 0
+  }
+
+  // ... 其他方法保持不變
+}
+```
+
+---
+
+### Step 7: 實作預算管理 API
+
+建立 `src/controllers/admin/budget.controller.ts`:
+
+```typescript
+/**
+ * 預算管理 API Controller
+ */
+
+import { Request, Response } from 'express'
+import { db } from '../../lib/db'
+import { getUserThresholds } from '../../config/cost-thresholds'
+
+/**
+ * 設定用戶成本閾值
+ *
+ * PUT /api/admin/budget/user/:userId
+ * Body: { daily_limit?: number, monthly_limit?: number, execution_limit?: number }
+ */
+export async function setUserBudget(
+  req: Request,
+  res: Response
+): Promise<void> {
+  try {
+    const { userId } = req.params
+    const { daily_limit, monthly_limit, execution_limit } = req.body
+
+    // TODO: 寫入資料庫
+    // await db.user_cost_thresholds.upsert({
+    //   where: { user_id: userId },
+    //   create: {
+    //     user_id: userId,
+    //     daily_limit,
+    //     monthly_limit,
+    //     execution_limit,
+    //   },
+    //   update: {
+    //     daily_limit,
+    //     monthly_limit,
+    //     execution_limit,
+    //   },
+    // })
+
+    res.json({
+      success: true,
+      userId,
+      thresholds: {
+        daily_limit,
+        monthly_limit,
+        execution_limit,
+      },
+    })
+  } catch (error: any) {
+    res.status(500).json({
+      error: 'Failed to set user budget',
+      message: error.message,
+    })
+  }
+}
+
+/**
+ * 查詢用戶預算使用狀況
+ *
+ * GET /api/admin/budget/user/:userId
+ */
+export async function getUserBudget(
+  req: Request,
+  res: Response
+): Promise<void> {
+  try {
+    const { userId } = req.params
+
+    // 取得閾值
+    const thresholds = await getUserThresholds(userId)
+
+    // 取得當日成本
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    const result = await db.api_costs.aggregate({
+      where: {
+        user_id: userId,
+        created_at: { gte: today },
+      },
+      _sum: { cost: true },
+    })
+    const dailyCost = result._sum.cost || 0
+
+    // 取得本月成本
+    const monthStart = new Date(today.getFullYear(), today.getMonth(), 1)
+    const monthResult = await db.api_costs.aggregate({
+      where: {
+        user_id: userId,
+        created_at: { gte: monthStart },
+      },
+      _sum: { cost: true },
+    })
+    const monthlyCost = monthResult._sum.cost || 0
+
+    res.json({
+      userId,
+      thresholds,
+      usage: {
+        daily: {
+          cost: dailyCost,
+          limit: thresholds.daily_limit,
+          percentage: thresholds.daily_limit
+            ? (dailyCost / thresholds.daily_limit) * 100
+            : 0,
+        },
+        monthly: {
+          cost: monthlyCost,
+          limit: thresholds.monthly_limit,
+          percentage: thresholds.monthly_limit
+            ? (monthlyCost / thresholds.monthly_limit) * 100
+            : 0,
+        },
+      },
+    })
+  } catch (error: any) {
+    res.status(500).json({
+      error: 'Failed to fetch user budget',
+      message: error.message,
+    })
+  }
+}
+```
+
+---
+
+### Step 8: 整合到 AILogger
 
 修改 `src/services/task-logger.service.ts`,在 AILogger 中自動追蹤成本:
 
@@ -1253,6 +1900,10 @@ npm test -- tests/phase-1/task-1.6.e2e.test.ts
 - [ ] 成本追蹤服務 (`src/services/cost-tracker.service.ts`)
 - [ ] AILogger 整合成本追蹤
 - [ ] 成本報表 API (`src/controllers/admin/costs.controller.ts`)
+- [ ] **成本閾值配置 (`src/config/cost-thresholds.ts`)** ✨ 新增
+- [ ] **告警服務 (`src/services/alert.service.ts`)** ✨ 新增
+- [ ] **CostTracker 整合告警檢查** ✨ 新增
+- [ ] **預算管理 API (`src/controllers/admin/budget.controller.ts`)** ✨ 新增
 - [ ] api_costs 表已建立 (Task 1.1)
 
 ### 測試檔案
