@@ -27,7 +27,48 @@
 - ✅ **明確的失敗點** - 精準定位哪個步驟壞了
 - ✅ **可追溯的執行路徑** - 從頭到尾看得到發生什麼事
 
-### 2. 四層 Logging 架構
+### 2. 前端必須能取得 execution_id
+
+**API 設計原則**:
+
+- ✅ **所有啟動背景任務的 API 都必須回傳 `executionId`**
+- ✅ **前端在 Console 顯示 execution_id** - 方便使用者複製給 AI 診斷
+- ✅ **前端可選在 UI 上顯示任務 ID** - 提升除錯體驗
+
+**範例 API 回應**:
+```json
+{
+  "success": true,
+  "executionId": "exec_7f8e9a0b",  // ← 必須包含!
+  "message": "Video generation started"
+}
+```
+
+**前端使用範例**:
+```typescript
+const response = await fetch('/api/videos/generate', { ... })
+const { executionId } = await response.json()
+
+// 顯示在 Console (方便複製)
+console.log(`🔍 任務已啟動`)
+console.log(`📋 Execution ID: ${executionId}`)
+console.log(`💡 如有問題,請提供此 ID 給 AI 診斷`)
+
+// 可選: 顯示在 UI 上
+setTaskInfo({ executionId, status: 'processing' })
+```
+
+**AI 診斷使用**:
+當使用者遇到問題時,只需提供 `execution_id`:
+```
+使用者: "我的影片生成失敗了,execution_id 是 exec_7f8e9a0b"
+
+AI: [自動查詢] curl http://localhost:8080/api/admin/logs/execution/exec_7f8e9a0b
+    [分析 log 找出問題]
+    [提供修復建議]
+```
+
+### 3. 四層 Logging 架構
 
 ```
 Layer 1: HTTP 請求層 (API Gateway)
@@ -68,7 +109,7 @@ class [EngineName] {
   async process(input: Input, userId: string) {
     // 建立 TaskLogger
     const taskLogger = createTaskLogger('[task_type]', userId)
-    const executionId = taskLogger.getExecutionId()
+    const executionId = taskLogger.getExecutionId()  // ← 取得 execution_id
     const validator = new DataFlowValidator(taskLogger.getLogger())
 
     try {
@@ -85,6 +126,9 @@ class [EngineName] {
         { /* result summary */ },
         totalCost  // 從 CostTracker 取得
       )
+
+      // ✅ 回傳 executionId (讓 API 可以回傳給前端)
+      return { result, executionId }
 
     } catch (error) {
       // 記錄任務失敗

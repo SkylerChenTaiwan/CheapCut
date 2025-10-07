@@ -1058,7 +1058,82 @@ export async function getServiceFailureRate(
 
 ---
 
-### Step 6: 實作資料驗證框架
+### Step 6: API 回傳 execution_id
+
+**重要**: 所有啟動背景任務的 API **必須回傳 `executionId`** 給前端!
+
+**範例 API 實作**:
+
+```typescript
+/**
+ * POST /api/videos/generate
+ *
+ * 啟動影片生成任務
+ */
+router.post('/videos/generate', authenticate, async (req, res) => {
+  try {
+    const userId = req.user.id
+    const { scriptText } = req.body
+
+    // 建立 TaskLogger (會產生 execution_id)
+    const taskLogger = createTaskLogger('video_generation', userId)
+    const executionId = taskLogger.getExecutionId()  // ← 取得 execution_id
+
+    await taskLogger.taskStarted(
+      { scriptText },
+      ['stt', 'segmentation', 'ai_selection', 'timeline', 'composition']
+    )
+
+    // 非同步處理 (避免 HTTP 超時)
+    processVideoGeneration(taskLogger, scriptText).catch(err => {
+      console.error('Background task failed:', err)
+    })
+
+    // ✅ 回傳 execution_id 給前端
+    res.json({
+      success: true,
+      executionId,  // ← 重點在這!
+      message: 'Video generation started'
+    })
+
+  } catch (error) {
+    res.status(500).json({ error: error.message })
+  }
+})
+```
+
+**前端使用方式**:
+
+```typescript
+// 發起請求
+const response = await fetch('/api/videos/generate', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ scriptText: '...' })
+})
+
+const { executionId } = await response.json()
+
+// ✅ 顯示在 Console (方便使用者複製)
+console.log(`🔍 任務已啟動`)
+console.log(`📋 Execution ID: ${executionId}`)
+console.log(`💡 如有問題,請提供此 ID 給 AI 診斷`)
+
+// 可選: 顯示在 UI 上
+setTaskInfo({ executionId, status: 'processing' })
+```
+
+**診斷使用**:
+
+當使用者遇到問題時:
+1. 從 Console 複製 `execution_id`
+2. 提供給 AI: "我的任務失敗了,execution_id 是 exec_xxx"
+3. AI 自動查詢: `curl http://localhost:8080/api/admin/logs/execution/exec_xxx`
+4. AI 分析 log 並提供修復建議
+
+---
+
+### Step 7: 實作資料驗證框架
 
 建立 `src/services/validators/schemas.ts`:
 
