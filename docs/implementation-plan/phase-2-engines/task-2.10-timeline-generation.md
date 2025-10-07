@@ -1277,6 +1277,142 @@ npm test -- tests/phase-2/task-2.10.e2e.test.ts
 
 ---
 
+## 📊 Logging 與錯誤處理整合
+
+> 參考: [LOGGING-STANDARDS.md](../LOGGING-STANDARDS.md)
+
+### 必須記錄的事件
+
+#### 基礎事件
+- [ ] `task_started` - 任務開始
+- [ ] `task_step_started` - 生成時間軸
+- [ ] `task_step_completed` - 時間軸生成完成
+- [ ] `task_completed` - 任務完成
+- [ ] `task_failed` - 任務失敗
+- [ ] `data_flow_validation_failed` - 時間軸結構驗證失敗
+
+### 整合程式碼範例
+
+```typescript
+class TimelineGenerationEngine {
+  async generateTimeline(selections: any[], voiceoverId: string, userId: string) {
+    const taskLogger = createTaskLogger('timeline_generation', userId)
+    const executionId = taskLogger.getExecutionId()
+    const validator = new DataFlowValidator(taskLogger.getLogger())
+
+    try {
+      const voiceover = await db.voiceovers.findOne({ voiceoverId })
+
+      await taskLogger.taskStarted(
+        { selections_count: selections.length },
+        ['generate_timeline', 'validate_timeline', 'save_timeline']
+      )
+
+      // Step 1: 生成時間軸 JSON
+      await taskLogger.stepStarted(0, 'generate_timeline')
+
+      const timeline = {
+        timeline_id: uuid(),
+        voiceover_url: voiceover.file_url,
+        total_duration: voiceover.duration,
+        segments: selections.map((sel, index) => ({
+          index,
+          start_time: voiceover.segments[index].start,
+          end_time: voiceover.segments[index].end,
+          video_segment_id: sel.selectedSegmentId,
+          video_trim_start: sel.trimStart,
+          video_trim_end: sel.trimEnd
+        }))
+      }
+
+      await taskLogger.stepCompleted(0, 'generate_timeline', {
+        segments_count: timeline.segments.length
+      })
+
+      // Step 2: 驗證時間軸結構 ✅ 關鍵驗證！
+      await taskLogger.stepStarted(1, 'validate_timeline')
+
+      await validator.validateDataFlow(
+        'ai_selection',
+        'timeline_generator',
+        'timeline',  // 在 schemas.ts 中已定義
+        timeline
+      )
+
+      // 額外驗證: 時間軸一致性
+      const errors = []
+      for (let i = 0; i < timeline.segments.length; i++) {
+        const seg = timeline.segments[i]
+
+        // 檢查 start < end
+        if (seg.start_time >= seg.end_time) {
+          errors.push({
+            segment_index: i,
+            error: 'start_time >= end_time',
+            data: seg
+          })
+        }
+
+        // 檢查 video_trim_end <= segment.duration
+        const videoSegment = await db.segments.findOne({ segment_id: seg.video_segment_id })
+        if (seg.video_trim_end > videoSegment.duration) {
+          errors.push({
+            segment_index: i,
+            error: 'video_trim_end > segment.duration',
+            data: { ...seg, segment_duration: videoSegment.duration }
+          })
+        }
+      }
+
+      if (errors.length > 0) {
+        await taskLogger.getLogger().error('data_flow_validation_failed', {
+          validation_error: 'InvalidTimelineStructure',
+          error_message: 'Timeline has invalid time ranges',
+          error_details: { validation_errors: errors }
+        })
+        throw new ValidationError(`Timeline validation failed: ${errors.length} errors`)
+      }
+
+      await taskLogger.stepCompleted(1, 'validate_timeline')
+
+      // Step 3: 儲存時間軸
+      await taskLogger.stepStarted(2, 'save_timeline')
+      await db.timelines.create({ timeline_json: timeline })
+      await taskLogger.stepCompleted(2, 'save_timeline')
+
+      await taskLogger.taskCompleted({ timeline_id: timeline.timeline_id }, 0)
+
+      return timeline
+
+    } catch (error) {
+      await taskLogger.taskFailed('generate_timeline', error)
+      throw error  // ✅ Fail Fast
+    }
+  }
+}
+```
+
+### 必須驗證的資料
+
+根據 `schemas.ts`:
+- [x] `timeline_id`: string
+- [x] `voiceover_url`: string (uri)
+- [x] `total_duration`: number >= 0
+- [x] `segments`: array (min 1)
+- [x] 每個 segment 的 start_time < end_time
+
+**額外驗證**:
+- [x] video_trim_end <= segment.duration
+- [x] 所有 video_segment_id 在資料庫中存在
+
+### Fail Fast 檢查清單
+
+- [x] ✅ 時間範圍錯誤時立即 throw error
+- [x] ✅ 片段不存在時立即 throw error
+- [x] ✅ 記錄詳細的驗證錯誤
+
+---
+
 ## 🐛 常見問題與解決方案
 
 ### 常見錯誤類型速查表

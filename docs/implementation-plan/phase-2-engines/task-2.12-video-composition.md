@@ -1018,6 +1018,151 @@ npm test -- task-2.12.e2e.test.ts
 
 ---
 
+## 📊 Logging 與錯誤處理整合
+
+> 參考: [LOGGING-STANDARDS.md](../LOGGING-STANDARDS.md)
+
+### 必須記錄的事件
+
+#### 基礎事件
+- [ ] `task_started` - 任務開始
+- [ ] `task_step_started` - 下載素材/執行 FFmpeg
+- [ ] `task_step_completed` - 步驟完成
+- [ ] `task_completed` - 影片合成完成
+- [ ] `task_failed` - 任務失敗
+
+#### 檔案/FFmpeg 事件
+- [ ] `file_operation_failed` - 檔案下載失敗
+- [ ] `data_flow_validation_failed` - 檔案驗證失敗 (不存在/大小為0)
+- [ ] `ffmpeg_execution_failed` - FFmpeg 執行失敗
+
+### 整合程式碼範例
+
+```typescript
+class VideoCompositionEngine {
+  async compose(timelineId: string, userId: string) {
+    const taskLogger = createTaskLogger('video_composition', userId)
+    const executionId = taskLogger.getExecutionId()
+    const validator = new DataFlowValidator(taskLogger.getLogger())
+
+    try {
+      const timeline = await db.timelines.findOne({ timelineId })
+
+      await taskLogger.taskStarted(
+        { timeline_id: timelineId, segments_count: timeline.timeline_json.segments.length },
+        ['download_segments', 'validate_files', 'ffmpeg_compose', 'upload_result']
+      )
+
+      // Step 1: 下載素材
+      await taskLogger.stepStarted(0, 'download_segments')
+
+      const localFiles = []
+      for (const seg of timeline.timeline_json.segments) {
+        const segment = await db.segments.findOne({ segment_id: seg.video_segment_id })
+
+        try {
+          const localPath = await this.downloadFile(segment.file_path)
+          localFiles.push({ segmentId: seg.video_segment_id, path: localPath })
+        } catch (error) {
+          await taskLogger.getLogger().error('file_operation_failed', {
+            operation: 'download',
+            file_path: segment.file_path,
+            segment_id: seg.video_segment_id,
+            error_type: error.constructor.name,
+            error_message: error.message
+          })
+          throw error
+        }
+      }
+
+      await taskLogger.stepCompleted(0, 'download_segments', {
+        files_downloaded: localFiles.length
+      })
+
+      // Step 2: 驗證檔案 ✅ 關鍵驗證！
+      await taskLogger.stepStarted(1, 'validate_files')
+
+      for (const file of localFiles) {
+        await validator.validateFile(file.path, {
+          mustExist: true,
+          minSize: 1024  // 至少 1KB
+        })
+      }
+
+      await taskLogger.stepCompleted(1, 'validate_files')
+
+      // Step 3: FFmpeg 合成
+      await taskLogger.stepStarted(2, 'ffmpeg_compose')
+
+      const ffmpegCommand = this.buildFFmpegCommand(localFiles, timeline)
+      const startTime = Date.now()
+
+      try {
+        const result = await this.executeFFmpeg(ffmpegCommand)
+        const duration = Date.now() - startTime
+
+        await taskLogger.stepCompleted(2, 'ffmpeg_compose', {
+          duration_ms: duration,
+          output_size: result.fileSize
+        })
+
+      } catch (error) {
+        await taskLogger.getLogger().error('ffmpeg_execution_failed', {
+          error_message: error.message,
+          error_details: {
+            exitCode: error.exitCode,
+            // ✅ 記錄完整的 stderr (超級重要！)
+            stderr: error.stderr,
+            // ✅ 記錄 FFmpeg 指令 (用於重現問題)
+            command: ffmpegCommand,
+            // ✅ 記錄所有輸入檔案資訊
+            input_files: localFiles.map(f => ({
+              path: f.path,
+              size: fs.statSync(f.path).size,
+              exists: fs.existsSync(f.path)
+            }))
+          }
+        })
+        throw error
+      }
+
+      // Step 4: 上傳結果
+      await taskLogger.stepStarted(3, 'upload_result')
+      const outputUrl = await this.uploadToStorage(result.outputPath)
+      await taskLogger.stepCompleted(3, 'upload_result')
+
+      // 計算成本 (Cloudflare Stream)
+      const cost = (timeline.timeline_json.total_duration / 45) * 0.004
+
+      await taskLogger.taskCompleted({ output_url: outputUrl }, cost)
+
+      return { url: outputUrl }
+
+    } catch (error) {
+      await taskLogger.taskFailed('ffmpeg_compose', error, {
+        timeline_id: timelineId
+      })
+      throw error  // ✅ Fail Fast
+    }
+  }
+}
+```
+
+### 必須驗證的資料
+
+- [x] 所有片段檔案存在
+- [x] 檔案大小 > 0 bytes
+- [x] FFmpeg 執行成功 (exit code 0)
+
+### Fail Fast 檢查清單
+
+- [x] ✅ 檔案不存在時立即 throw error
+- [x] ✅ 檔案大小為 0 時立即 throw error
+- [x] ✅ FFmpeg 失敗時立即 throw error (記錄完整 stderr 與指令)
+- [x] ❌ 不嘗試修復或重新嘗試 (直接失敗)
+
+---
+
 ## 🐛 常見問題與解決方案
 
 ### 常見錯誤類型速查表
