@@ -1,15 +1,15 @@
-# Task 3.3: 素材上傳介面
+# Task 2.1: GCS 儲存與上傳
 
 ## Task 資訊
 
 | 項目 | 內容 |
 |------|------|
-| **Task ID** | 3.3 |
-| **Task 名稱** | 素材上傳介面 |
-| **所屬 Phase** | Phase 3: 前端開發 |
+| **Task ID** | 2.1 |
+| **Task 名稱** | GCS 儲存與上傳 |
+| **所屬 Phase** | Phase 2: 核心功能開發 |
 | **預估時間** | 3-4 小時 |
-| **前置 Task** | Task 3.2 (登入/註冊頁面) |
-| **檔案位置** | `docs/implementation-plan/phase-3-frontend/task-3.3-material-upload.md` |
+| **前置 Task** | Task 1.3 (建立 API 基礎架構) |
+| **檔案位置** | `docs/implementation-plan/phase-2-core-features/task-2.1-storage-upload.md` |
 
 ---
 
@@ -23,29 +23,29 @@
 
 ## 功能描述
 
-TODO: 描述素材上傳介面的功能
+TODO: 描述 GCS 儲存與上傳的功能
 
 主要包含：
-- 建立檔案上傳元件
-- 實作拖放上傳
-- 顯示上傳進度
-- 處理上傳錯誤
+- 設定 Google Cloud Storage
+- 實作檔案上傳 API
+- 處理影片檔案儲存
+- 產生安全的存取 URL
 
 ---
 
 ## 前置知識
 
-### 1. File Upload
+### 1. Google Cloud Storage
 
-TODO: 說明檔案上傳基礎知識
+TODO: 說明 GCS 基礎知識
 
-### 2. Drag and Drop API
+### 2. 檔案上傳處理
 
-TODO: 說明拖放 API
+TODO: 說明檔案上傳的概念
 
-### 3. Progress Indicator
+### 3. Signed URLs
 
-TODO: 說明進度指示器
+TODO: 說明簽署 URL 的用途
 
 ---
 
@@ -67,7 +67,8 @@ TODO: 列出相依的檔案或 Task
 TODO: 補充需要的套件
 
 ### 工具依賴
-- GCS
+- Google Cloud SDK
+- GCS Bucket 已建立
 
 TODO: 說明其他需要的工具
 
@@ -75,36 +76,36 @@ TODO: 說明其他需要的工具
 
 ## 實作步驟
 
-### Step 1: 建立上傳元件
+### Step 1: 設定 GCS 連接
 
-TODO: 說明如何建立元件
+TODO: 說明如何設定 GCS
 
 ```typescript
-// TODO: 提供元件範例
+// TODO: 提供 GCS 連接範例
 ```
 
-### Step 2: 實作拖放功能
+### Step 2: 實作上傳 API
 
-TODO: 說明如何實作拖放
+TODO: 說明如何實作上傳功能
 
 ```typescript
-// TODO: 提供拖放範例
+// TODO: 提供上傳 API 範例
 ```
 
-### Step 3: 實作進度顯示
+### Step 3: 處理檔案驗證
 
-TODO: 說明如何顯示進度
+TODO: 說明如何驗證檔案
 
 ```typescript
-// TODO: 提供進度範例
+// TODO: 提供檔案驗證範例
 ```
 
-### Step 4: 處理上傳錯誤
+### Step 4: 產生存取 URL
 
-TODO: 說明如何處理錯誤
+TODO: 說明如何產生 Signed URL
 
 ```typescript
-// TODO: 提供錯誤處理範例
+// TODO: 提供 URL 產生範例
 ```
 
 ---
@@ -113,24 +114,24 @@ TODO: 說明如何處理錯誤
 
 ### Basic Verification (基礎驗證)
 
-**目標**: 驗證上傳介面是否正常運作
+**目標**: 驗證 GCS 儲存是否正常運作
 
-**測試檔案**: `tests/phase-3/task-3.3.basic.test.ts`
+**測試檔案**: `tests/phase-2/task-2.1.basic.test.ts`
 
 ```typescript
 import { TestRunner } from '../../src/lib/test-runner';
 
-describe('Task 3.3 - Basic: Material Upload', () => {
+describe('Task 2.1 - Basic: GCS Storage Setup', () => {
   const runner = new TestRunner('basic');
 
-  it('應該能夠渲染上傳介面', async () => {
-    await runner.runTest('上傳介面渲染測試', async () => {
+  it('應該能夠連接 GCS', async () => {
+    await runner.runTest('GCS 連接測試', async () => {
       // TODO: 實作測試程式碼
     });
   });
 
-  it('應該能夠選擇檔案', async () => {
-    await runner.runTest('檔案選擇測試', async () => {
+  it('應該能夠上傳檔案', async () => {
+    await runner.runTest('檔案上傳測試', async () => {
       // TODO: 實作測試程式碼
     });
   });
@@ -143,13 +144,13 @@ describe('Task 3.3 - Basic: Material Upload', () => {
 
 **執行方式**:
 ```bash
-npm test -- tests/phase-3/task-3.3.basic.test.ts
+npm test -- tests/phase-2/task-2.1.basic.test.ts
 ```
 
 **通過標準**:
-- ✅ 上傳介面正確渲染
-- ✅ 能夠選擇檔案
-- ✅ 拖放功能正常
+- ✅ 能夠連接 GCS
+- ✅ 能夠上傳檔案
+- ✅ 檔案正確儲存
 
 ---
 
@@ -157,22 +158,22 @@ npm test -- tests/phase-3/task-3.3.basic.test.ts
 
 **目標**: 驗證上傳功能完整性
 
-**測試檔案**: `tests/phase-3/task-3.3.functional.test.ts`
+**測試檔案**: `tests/phase-2/task-2.1.functional.test.ts`
 
 ```typescript
 import { TestRunner } from '../../src/lib/test-runner';
 
-describe('Task 3.3 - Functional: Upload Operations', () => {
+describe('Task 2.1 - Functional: Upload Operations', () => {
   const runner = new TestRunner('functional');
 
-  it('應該正確上傳檔案', async () => {
-    await runner.runTest('檔案上傳測試', async () => {
+  it('應該正確驗證檔案類型', async () => {
+    await runner.runTest('檔案驗證測試', async () => {
       // TODO: 實作測試程式碼
     });
   });
 
-  it('應該正確顯示進度', async () => {
-    await runner.runTest('進度顯示測試', async () => {
+  it('應該產生有效的 Signed URL', async () => {
+    await runner.runTest('URL 產生測試', async () => {
       // TODO: 實作測試程式碼
     });
   });
@@ -185,13 +186,13 @@ describe('Task 3.3 - Functional: Upload Operations', () => {
 
 **執行方式**:
 ```bash
-npm test -- tests/phase-3/task-3.3.functional.test.ts
+npm test -- tests/phase-2/task-2.1.functional.test.ts
 ```
 
 **通過標準**:
-- ✅ 檔案正確上傳
-- ✅ 進度正確顯示
-- ✅ 錯誤處理正確
+- ✅ 檔案驗證正確執行
+- ✅ Signed URL 正確產生
+- ✅ 檔案存取權限正確
 
 ---
 
@@ -199,12 +200,12 @@ npm test -- tests/phase-3/task-3.3.functional.test.ts
 
 **目標**: 驗證完整上傳流程
 
-**測試檔案**: `tests/phase-3/task-3.3.e2e.test.ts`
+**測試檔案**: `tests/phase-2/task-2.1.e2e.test.ts`
 
 ```typescript
 import { TestRunner } from '../../src/lib/test-runner';
 
-describe('Task 3.3 - E2E: Complete Upload Flow', () => {
+describe('Task 2.1 - E2E: Complete Upload Flow', () => {
   const runner = new TestRunner('e2e');
 
   it('應該能完整執行上傳流程', async () => {
@@ -221,12 +222,12 @@ describe('Task 3.3 - E2E: Complete Upload Flow', () => {
 
 **執行方式**:
 ```bash
-npm test -- tests/phase-3/task-3.3.e2e.test.ts
+npm test -- tests/phase-2/task-2.1.e2e.test.ts
 ```
 
 **通過標準**:
 - ✅ 完整的上傳流程正確運作
-- ✅ 檔案可以成功上傳
+- ✅ 檔案可以正確存取
 - ✅ 錯誤處理完善
 
 ---
@@ -236,16 +237,16 @@ npm test -- tests/phase-3/task-3.3.e2e.test.ts
 實作完成後，請依序檢查以下項目：
 
 ### 實作檢查
-- [ ] 上傳元件已建立
-- [ ] 拖放功能已實作
-- [ ] 進度顯示已實作
-- [ ] 錯誤處理已實作
+- [ ] GCS 連接已設定
+- [ ] 上傳 API 已實作
+- [ ] 檔案驗證已實作
+- [ ] Signed URL 產生已實作
 - [ ] 文件已撰寫
 
 ### 測試檔案
-- [ ] `tests/phase-3/task-3.3.basic.test.ts` 已建立
-- [ ] `tests/phase-3/task-3.3.functional.test.ts` 已建立
-- [ ] `tests/phase-3/task-3.3.e2e.test.ts` 已建立
+- [ ] `tests/phase-2/task-2.1.basic.test.ts` 已建立
+- [ ] `tests/phase-2/task-2.1.functional.test.ts` 已建立
+- [ ] `tests/phase-2/task-2.1.e2e.test.ts` 已建立
 
 ### 驗收測試
 - [ ] Basic 測試全部通過
@@ -273,7 +274,7 @@ npm test -- tests/phase-3/task-3.3.e2e.test.ts
 ✅ TODO: 列出完成後應具備的能力
 ✅ TODO: 列出完成後應具備的能力
 
-**下一步**: Task 3.4 - 素材庫瀏覽
+**下一步**: Task 2.2 - Google Video AI 整合
 
 ---
 
