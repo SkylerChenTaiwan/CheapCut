@@ -1167,6 +1167,137 @@ curl http://localhost:8080/api/analysis/results/MATERIAL_ID \
 
 ---
 
+## 📊 Logging 與錯誤處理整合
+
+> 參考: [LOGGING-STANDARDS.md](../LOGGING-STANDARDS.md)
+
+### 必須記錄的事件
+
+#### 基礎事件 (TaskLogger)
+- [ ] `task_started` - 任務開始
+- [ ] `task_step_started` - 開始呼叫 Video AI
+- [ ] `task_step_completed` - Video AI 分析完成
+- [ ] `task_completed` - 任務完成 (包含總成本)
+- [ ] `task_failed` - 任務失敗
+
+#### AI 呼叫事件
+- [ ] `ai_call_started` - Google Video AI 呼叫開始
+- [ ] `ai_call_completed` - 分析成功 (包含場景數、標籤數、成本)
+- [ ] `ai_call_failed` - API 失敗 (包含 status code, error details)
+- [ ] `ai_response_validation_failed` - 回應格式驗證失敗
+
+### 整合程式碼範例
+
+```typescript
+class VideoAnalysisEngine {
+  async analyze(videoId: string, userId: string) {
+    // 建立 TaskLogger
+    const taskLogger = createTaskLogger('video_analysis', userId)
+    const executionId = taskLogger.getExecutionId()
+    const validator = new DataFlowValidator(taskLogger.getLogger())
+
+    try {
+      const video = await db.videos.findOne({ videoId })
+
+      // 記錄任務開始
+      await taskLogger.taskStarted(
+        {
+          videoId,
+          duration: video.duration,
+          filePath: video.file_path
+        },
+        ['call_video_ai', 'process_results']
+      )
+
+      // Step 1: 呼叫 Video AI
+      await taskLogger.stepStarted(0, 'call_video_ai')
+
+      const aiLogger = taskLogger.createAILogger('google_video_ai', 'video_analysis')
+
+      await aiLogger.callStarted({
+        videoUri: video.file_path,
+        features: ['LABEL_DETECTION', 'SHOT_CHANGE_DETECTION'],
+        videoDuration: video.duration
+      })
+
+      const startTime = Date.now()
+      const result = await googleVideoAI.annotateVideo({
+        inputUri: video.file_path,
+        features: ['LABEL_DETECTION', 'SHOT_CHANGE_DETECTION']
+      })
+      const duration = Date.now() - startTime
+
+      // 計算成本 (按影片分鐘數)
+      const cost = (video.duration / 60) * 0.10
+
+      await aiLogger.callCompleted(
+        {
+          scenes_detected: result.shotAnnotations?.length || 0,
+          labels_count: result.labelAnnotations?.length || 0
+        },
+        cost
+      )
+
+      // 驗證 AI 回應 (基本檢查)
+      if (!result.shotAnnotations || result.shotAnnotations.length === 0) {
+        await taskLogger.getLogger().error('ai_response_validation_failed', {
+          validation_error: 'EmptyResult',
+          error_message: 'No shot annotations returned',
+          video_id: videoId,
+          video_duration: video.duration
+        })
+        throw new ValidationError('Video AI returned no shot annotations')
+      }
+
+      await taskLogger.stepCompleted(0, 'call_video_ai', {
+        scenes: result.shotAnnotations.length,
+        labels: result.labelAnnotations.length,
+        duration_ms: duration,
+        cost
+      })
+
+      // Step 2: 處理結果
+      await taskLogger.stepStarted(1, 'process_results')
+      // ... 處理邏輯 ...
+      await taskLogger.stepCompleted(1, 'process_results')
+
+      // 任務完成
+      await taskLogger.taskCompleted(
+        {
+          scenes_created: result.shotAnnotations.length,
+          labels_created: result.labelAnnotations.length
+        },
+        cost
+      )
+
+      return result
+
+    } catch (error) {
+      await taskLogger.taskFailed('call_video_ai', error, {
+        videoId,
+        videoDuration: video?.duration
+      })
+      throw error  // ✅ Fail Fast
+    }
+  }
+}
+```
+
+### 必須驗證的資料
+
+- [ ] AI 回應非空 (至少有 1 個 shot annotation)
+- [ ] 場景時間範圍有效 (start < end, 不超過影片長度)
+- [ ] 標籤信心度在 0-1 之間
+
+### Fail Fast 檢查清單
+
+- [x] ✅ API 失敗時立即 throw error
+- [x] ✅ 回應為空時立即 throw error
+- [x] ✅ 記錄完整錯誤上下文 (videoId, API response)
+- [x] ❌ 不使用 fallback 或預設值
+
+---
+
 ## 🐛 常見問題與解決方案
 
 ### 問題 1: API 未啟用錯誤

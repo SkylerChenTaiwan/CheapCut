@@ -1191,6 +1191,73 @@ npm test -- tests/phase-2/task-2.3.e2e.test.ts
 
 ---
 
+## 📊 Logging 與錯誤處理整合
+
+> 參考: [LOGGING-STANDARDS.md](../LOGGING-STANDARDS.md)
+
+### 必須記錄的事件
+
+#### 基礎事件
+- [ ] `task_step_started` - 開始標籤轉換
+- [ ] `task_step_completed` - 轉換完成
+- [ ] `data_flow_validation_failed` - 轉換結果驗證失敗
+
+### 整合程式碼範例
+
+```typescript
+class TagConversionEngine {
+  async convert(videoAIResult: any, taskLogger: TaskLogger) {
+    const validator = new DataFlowValidator(taskLogger.getLogger())
+
+    try {
+      await taskLogger.stepStarted(stepIndex, 'convert_tags')
+
+      // 轉換標籤
+      const tags = this.convertLabelsToTags(videoAIResult.labelAnnotations)
+
+      // 驗證轉換結果
+      if (tags.length === 0) {
+        await taskLogger.getLogger().warn('data_flow_validation_failed', {
+          validation_error: 'EmptyResult',
+          error_message: 'Tag conversion returned no tags',
+          input_labels_count: videoAIResult.labelAnnotations?.length || 0
+        })
+      }
+
+      // 驗證標籤格式
+      for (const tag of tags) {
+        if (!tag.category || !tag.name) {
+          await taskLogger.getLogger().error('data_flow_validation_failed', {
+            validation_error: 'InvalidTagFormat',
+            error_message: 'Tag missing required fields',
+            tag
+          })
+          throw new ValidationError('Invalid tag format')
+        }
+      }
+
+      await taskLogger.stepCompleted(stepIndex, 'convert_tags', {
+        tags_created: tags.length,
+        categories: [...new Set(tags.map(t => t.category))]
+      })
+
+      return tags
+
+    } catch (error) {
+      throw error  // ✅ Fail Fast
+    }
+  }
+}
+```
+
+### Fail Fast 檢查清單
+
+- [x] ✅ 標籤格式錯誤時立即 throw error
+- [x] ⚠️  轉換結果為空時記錄 WARN (可能是影片內容問題)
+- [x] ✅ 記錄轉換統計資訊
+
+---
+
 ## 🐛 常見問題與解決方案
 
 ### Q1: Foreign key constraint fails
