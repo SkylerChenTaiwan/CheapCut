@@ -703,6 +703,179 @@ curl -X POST https://api.cheapcut.com/admin/prompts/clear-cache
 
 ---
 
+## 📊 Logging 與錯誤處理整合
+
+> 參考: [LOGGING-STANDARDS.md](../LOGGING-STANDARDS.md)
+
+### 必須記錄的事件
+
+PromptManager 作為所有 AI 呼叫的統一入口,必須記錄:
+
+#### 基礎事件
+- [x] Prompt 載入成功/失敗
+- [x] Prompt 渲染成功/失敗
+- [x] AI 呼叫自動記錄 (透過 PromptManager)
+- [x] 成本自動追蹤 (透過 PromptManager)
+
+#### AI 呼叫事件 (自動記錄)
+- [x] `ai_call_started` - AI 呼叫開始
+- [x] `ai_call_completed` - AI 呼叫成功 (包含成本與 tokens)
+- [x] `ai_call_failed` - AI 呼叫失敗
+
+### 整合方式
+
+**在 PromptManager.executePrompt() 中自動記錄**:
+
+```typescript
+async executePrompt(
+  category: string,
+  name: string,
+  variables: any,
+  context: { executionId?: string; userId?: string; callId?: string }
+) {
+  const logger = new Logger(context)
+  const callId = context.callId || uuid()
+
+  try {
+    // 載入 & 渲染 prompt
+    const { prompt, model, temperature } = await this.loadPrompt(category, name)
+    const rendered = this.renderPrompt(prompt, variables)
+
+    // 記錄 AI 呼叫開始
+    await logger.info('ai_call_started', {
+      call_id: callId,
+      service: 'openai',
+      operation: `${model}_${category}_${name}`,
+      prompt_category: category,
+      prompt_name: name,
+      model
+    }, { service: 'openai', operation: `${category}_${name}` })
+
+    // 呼叫 AI
+    const startTime = Date.now()
+    const response = await openai.chat.completions.create({
+      model,
+      temperature,
+      messages: [{ role: 'user', content: rendered }]
+    })
+    const duration = Date.now() - startTime
+
+    // 計算成本
+    const cost = this.calculateCost(model, response.usage)
+
+    // 記錄 AI 呼叫成功
+    await logger.info('ai_call_completed', {
+      call_id: callId,
+      service: 'openai',
+      operation: `${model}_${category}_${name}`,
+      duration_ms: duration,
+      cost,
+      tokens: {
+        prompt: response.usage.prompt_tokens,
+        completion: response.usage.completion_tokens,
+        total: response.usage.total_tokens
+      },
+      result_summary: {
+        // 根據不同 prompt 提取摘要
+      }
+    }, { service: 'openai', operation: `${category}_${name}` })
+
+    // 自動追蹤成本
+    await costTracker.trackOpenAI({
+      userId: context.userId,
+      executionId: context.executionId,
+      model,
+      usage: {
+        prompt_tokens: response.usage.prompt_tokens,
+        completion_tokens: response.usage.completion_tokens
+      },
+      metadata: {
+        prompt_category: category,
+        prompt_name: name
+      }
+    })
+
+    return { response, cost, duration }
+
+  } catch (error) {
+    // 記錄 AI 呼叫失敗
+    await logger.error('ai_call_failed', {
+      call_id: callId,
+      service: 'openai',
+      operation: `${category}_${name}`,
+      error_type: error.constructor.name,
+      error_message: error.message,
+      error_details: (error as any).details || {},
+      // ✅ 記錄完整的 prompt (用於重現問題)
+      full_prompt: rendered,
+      prompt_variables: variables
+    }, { service: 'openai', operation: `${category}_${name}` })
+
+    throw error  // ✅ Fail Fast
+  }
+}
+```
+
+### 必須驗證的資料
+
+由於 PromptManager 本身不處理 AI 回應,驗證由各個使用 PromptManager 的引擎負責:
+
+- [ ] AI 回應 Schema 驗證 (在各引擎中使用 DataFlowValidator)
+- [ ] Prompt 檔案存在性驗證 (在 loadPrompt 中)
+- [ ] Prompt 格式正確性驗證 (在 loadPrompt 中)
+
+### Fail Fast 檢查清單
+
+- [x] ✅ Prompt 檔案不存在時立即 throw error
+- [x] ✅ Prompt 格式錯誤時立即 throw error
+- [x] ✅ AI 呼叫失敗時立即 throw error (記錄完整 prompt)
+- [x] ❌ 不使用 fallback 或預設值
+- [x] ✅ 記錄完整錯誤上下文 (prompt, variables, error details)
+
+### 使用範例
+
+```typescript
+// 在其他引擎中使用 PromptManager
+class SemanticAnalysisEngine {
+  async analyze(transcript: string, userId: string) {
+    const taskLogger = createTaskLogger('semantic_analysis', userId)
+    const executionId = taskLogger.getExecutionId()
+
+    try {
+      await taskLogger.taskStarted({ transcript }, ['ai_analysis'])
+      await taskLogger.stepStarted(0, 'ai_analysis')
+
+      // PromptManager 自動記錄 AI 呼叫與成本
+      const { response, cost } = await promptManager.executePrompt(
+        'voiceover-processing',
+        'semantic-analysis',
+        { transcript, language: 'zh-TW' },
+        { executionId, userId, callId: uuid() }
+      )
+
+      // 驗證 AI 回應
+      const validator = new DataFlowValidator(taskLogger.getLogger())
+      await validator.validateAIResponse(
+        callId,
+        'semantic_analysis',
+        response
+      )
+
+      await taskLogger.stepCompleted(0, 'ai_analysis', { topics: response.topics.length })
+      await taskLogger.taskCompleted({ topics: response.topics }, cost)
+
+      return response
+
+    } catch (error) {
+      await taskLogger.taskFailed('ai_analysis', error)
+      throw error
+    }
+  }
+}
+```
+
+---
+
 ## Task 完成確認
 
 完成這個 Task 後,你應該能夠:
