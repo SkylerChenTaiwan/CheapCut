@@ -13,6 +13,9 @@
 | 00 | [INDEX.md](./00-INDEX.md) | 本文件 - 總索引 | ✅ 完成 |
 | 01 | [project-overview.md](./01-project-overview.md) | 專案總覽、技術棧、架構圖 | ✅ 完成 |
 | 02 | [testing-framework.md](./02-testing-framework.md) | 測試架構設計與驗收策略 | ✅ 完成 |
+| 📊 | [PROGRESS-TRACKER.md](./PROGRESS-TRACKER.md) | **即時進度追蹤** - 記錄每個 Task 的完成狀態 | ✅ 完成 |
+| 🔀 | [PARALLEL-DEVELOPMENT-PLAN.md](./PARALLEL-DEVELOPMENT-PLAN.md) | 並行開發計劃 - 哪些 Task 可以同時執行 | ✅ 完成 |
+| ⚠️ | [RISK-ASSESSMENT.md](./RISK-ASSESSMENT.md) | 風險評估與緩解策略 | ✅ 完成 |
 
 ---
 
