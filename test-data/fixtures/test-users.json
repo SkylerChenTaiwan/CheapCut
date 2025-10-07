@@ -1,0 +1,46 @@
+{
+  "description": "測試用戶資料 - 用於自動化驗收測試",
+  "users": [
+    {
+      "id": "test_user_001",
+      "email": "test_user_001@example.com",
+      "password": "TestPassword123!",
+      "name": "測試用戶 001",
+      "role": "free",
+      "initial_credits": 0,
+      "purpose": "測試免費用戶的基本功能與額度限制"
+    },
+    {
+      "id": "test_user_002",
+      "email": "test_user_002@example.com",
+      "password": "TestPassword123!",
+      "name": "測試用戶 002",
+      "role": "paid",
+      "initial_credits": 1000,
+      "purpose": "測試付費用戶的完整功能流程"
+    },
+    {
+      "id": "test_user_003",
+      "email": "test_user_003@example.com",
+      "password": "TestPassword123!",
+      "name": "測試用戶 003",
+      "role": "paid",
+      "initial_credits": 100,
+      "purpose": "測試額度不足的情境"
+    },
+    {
+      "id": "test_user_admin",
+      "email": "test_admin@example.com",
+      "password": "AdminPassword123!",
+      "name": "測試管理員",
+      "role": "admin",
+      "initial_credits": 999999,
+      "purpose": "測試管理功能與不受限制的操作"
+    }
+  ],
+  "notes": [
+    "所有測試用戶的 ID 和 email 都以 'test_' 開頭,方便識別與清理",
+    "密碼都使用相同的測試密碼,簡化測試流程",
+    "測試完成後可以選擇性保留或清理這些用戶資料"
+  ]
+}

@@ -1,0 +1,6 @@
+# 測試影片檔案不加入 git (檔案太大)
+videos/
+
+# 測試結果保留在本地
+results/*
+!results/.gitkeep

@@ -1,0 +1,80 @@
+{
+  "description": "測試用的影片剪輯指令範例",
+  "prompts": [
+    {
+      "id": "simple_cut",
+      "name": "簡單裁剪",
+      "prompt": "Cut the video from 2 seconds to 5 seconds",
+      "expected_duration": 3,
+      "complexity": "low",
+      "purpose": "測試基本的時間裁剪功能"
+    },
+    {
+      "id": "remove_silence",
+      "name": "移除靜音片段",
+      "prompt": "Remove all silent parts from the video",
+      "expected_duration": "variable",
+      "complexity": "medium",
+      "purpose": "測試音訊分析與智能剪輯"
+    },
+    {
+      "id": "speed_up",
+      "name": "加速影片",
+      "prompt": "Speed up the video to 2x speed",
+      "expected_duration": "half_of_original",
+      "complexity": "low",
+      "purpose": "測試影片速度調整功能"
+    },
+    {
+      "id": "extract_highlights",
+      "name": "提取精華片段",
+      "prompt": "Extract the most interesting 10 seconds from this video",
+      "expected_duration": 10,
+      "complexity": "high",
+      "purpose": "測試 AI 智能分析與精華提取"
+    },
+    {
+      "id": "add_transition",
+      "name": "添加轉場效果",
+      "prompt": "Add fade in and fade out transitions",
+      "expected_duration": "same_as_original",
+      "complexity": "medium",
+      "purpose": "測試視覺效果處理"
+    },
+    {
+      "id": "crop_vertical",
+      "name": "裁剪成直式影片",
+      "prompt": "Crop this video to 9:16 aspect ratio for social media",
+      "expected_duration": "same_as_original",
+      "complexity": "medium",
+      "purpose": "測試影片尺寸轉換功能"
+    },
+    {
+      "id": "complex_edit",
+      "name": "複雜剪輯",
+      "prompt": "Remove silent parts, speed up boring sections to 2x, and add fade transitions between cuts",
+      "expected_duration": "variable",
+      "complexity": "high",
+      "purpose": "測試多種編輯操作的組合"
+    },
+    {
+      "id": "invalid_prompt",
+      "name": "無效指令",
+      "prompt": "Make the video dance and sing a song",
+      "expected_duration": null,
+      "complexity": "impossible",
+      "purpose": "測試對不合理或無法執行指令的錯誤處理"
+    }
+  ],
+  "usage_guide": {
+    "simple_testing": "使用 simple_cut, speed_up, crop_vertical 等低複雜度指令進行快速測試",
+    "feature_testing": "使用 remove_silence, add_transition 等中等複雜度指令測試特定功能",
+    "stress_testing": "使用 extract_highlights, complex_edit 等高複雜度指令測試系統極限",
+    "error_testing": "使用 invalid_prompt 測試錯誤處理機制"
+  },
+  "notes": [
+    "這些指令會傳給 Replicate API,實際執行結果可能因 AI 模型而異",
+    "expected_duration 用於驗證輸出影片長度是否符合預期",
+    "complexity 用於估算處理時間與成本"
+  ]
+}
