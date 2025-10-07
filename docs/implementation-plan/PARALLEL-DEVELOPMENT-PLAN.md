@@ -32,15 +32,15 @@
 4. **批次整合**: 完成後一次性整合所有成果
 5. **明確範圍**: 每個 Task 有清楚的輸入/輸出定義
 
-### 人員分配（獨立 Task 模式）
+### 人員分配（垂直切片模式）
 
-| Claude Code | 專注領域 | 獨立 Task 範圍 | 無需依賴 |
-|------------|---------|--------------|---------|
-| **Claude A** | 基礎設施 | Phase 0/1 完整建設 | ✅ 完全獨立 |
-| **Claude B** | 影片分析 | 影片分析全流程 | ✅ 完全獨立 |
-| **Claude C** | 配音處理 | 配音處理全流程 | ✅ 完全獨立 |
-| **Claude D** | AI 選片 | 選片與時間軸生成 | ✅ 完全獨立 |
-| **Claude E** | 影片合成 | FFmpeg 合成全流程 | ✅ 完全獨立 |
+| Claude Code | 垂直切片 | 範圍（API + 前端） | 可立即開始 |
+|------------|---------|------------------|-----------|
+| **Claude A** | 影片素材管理 | 上傳、分析、切分、素材庫 | ✅ DAY 1 |
+| **Claude B** | 配音處理 | 上傳、轉錄、分析、配音庫 | ✅ DAY 1 |
+| **Claude C** | AI 選片時間軸 | 查詢、選片、時間軸預覽 | ✅ DAY 1 |
+| **Claude D** | 影片合成渲染 | 合成、字幕、配樂、進度 | ✅ DAY 1 |
+| **Claude E** | 基礎設施管理 | 專案、認證、監控、後台 | ✅ DAY 1 |
 
 ---
 
@@ -48,574 +48,345 @@
 
 ---
 
-## 🎯 獨立開發模式說明
+## 🎯 真正並行開發模式
 
 ### 核心概念
 
-**每個 Claude 負責一個完整的獨立模組**：
-- 從輸入到輸出的完整流程
-- 使用 Mock 資料進行獨立測試
-- 定義清楚的 Interface 供後續整合
-- 不依賴其他 Claude 的進度
+**五個 Claude 同時開始，完全獨立開發**：
+- 使用預先定義好的 Interface（已在文件中）
+- 每個人獨立完成一個垂直切片（API + 前端）
+- 使用 Mock 資料庫（JSON 檔案）
+- 使用 Mock 外部 API
+- 不依賴其他人的進度
 
-### 整合策略
+### DAY 0 準備（開始前完成）
 
-1. **Interface First**: 先定義好各模組的輸入/輸出格式
-2. **Mock Testing**: 使用假資料進行獨立測試
-3. **Batch Integration**: 所有模組完成後一次整合
-4. **Contract Testing**: 確保 Interface 契約符合預期
+**用戶自己先完成**：
+1. 建立 `docs/interfaces/` 目錄，定義所有 Interface
+2. 建立 `mock-data/` 目錄，準備測試資料
+3. 建立基本專案結構（package.json, tsconfig.json）
+4. 所有 Claude 都可以 clone 這個 repo
+
+**或者讓 Claude A 花 1 小時完成**，其他人等 1 小時即可開始
 
 ---
 
-## Phase 0: 基礎設施建立
+## 垂直切片 1: 影片素材管理（Video Material）
 
 **執行者**: Claude A
-**目標**: 建立完整的基礎設施與測試框架
-**總時間**: 25-36 小時 (3-4 天)
+**目標**: 完整的影片上傳、分析、切分流程（API + 前端）
+**總時間**: 18-24 小時 (2-3 天)
+**可立即開始**: ✅
 
-### 完整 Task 列表
-
-```
-□ Task 0.1: 建立驗收 CLI 框架 (3-4 小時)
-□ Task 0.2: 環境檢查測試 (2-3 小時)
-□ Task 0.3: 測試資料準備 (4-5 小時)
-□ Task 1.1: 資料庫 Schema (2-3 小時)
-□ Task 1.2: Supabase Auth (2-3 小時)
-□ Task 1.3: API 基礎架構 (3-4 小時)
-□ Task 1.4: Redis 設定 (2-3 小時)
-□ Task 1.5: Logger 服務 (4-5 小時)
-□ Task 1.6: 成本與效能追蹤 (5-6 小時)
-```
-
-### 交付成果
-
-- ✅ 完整的驗收測試框架
-- ✅ 資料庫 Schema 與 API 路由骨架
-- ✅ 認證系統
-- ✅ Redis 快取與 Bull Queue
-- ✅ Logger 與成本追蹤系統
-- ✅ 測試資料集
-
-### 提供給其他 Claude
-
-- API 路由定義文件
-- 資料庫 Schema 文件
-- Mock 資料產生器
-- 測試框架使用說明
-
----
-
-## Phase 2A: 影片分析模組
-
-**執行者**: Claude B
-**目標**: 完整的影片分析流程（獨立開發）
-**總時間**: 18-23 小時 (2-3 天)
-
-### 完整 Task 列表
+### 後端 API (10-12 小時)
 
 ```
-□ Task 2.0: Prompt 管理系統 (3-4 小時)
-  - 獨立的 PromptManager 模組
-  - 使用本地檔案系統儲存 Prompt
-  - 版本控制與快取機制
+□ 影片上傳 API (2-3 小時)
+  - POST /api/videos/upload
+  - 使用 Mock GCS (本地儲存)
+  - 儲存到 Mock DB (JSON 檔案)
 
-□ Task 2.1: GCS 儲存與上傳 (3-4 小時)
-  - 獨立的 StorageService 模組
-  - 支援 presigned URL 生成
-  - Mock API 供測試使用
+□ 影片分析 API (3-4 小時)
+  - POST /api/videos/:id/analyze
+  - Mock Google Video AI (回傳假資料)
+  - 儲存分析結果
 
-□ Task 2.2: Google Video AI 整合 (4-5 小時)
-  - 獨立的 VideoAnalysisService
-  - 使用 Mock 影片進行測試
-  - 輸出標準化的 JSON 格式
+□ 影片切分 API (3-4 小時)
+  - POST /api/videos/:id/segment
+  - 真實 FFmpeg 切分
+  - 生成縮圖
 
-□ Task 2.3: 標籤轉換與儲存 (3-4 小時)
-  - 獨立的 TagService
-  - 標籤標準化邏輯
-  - 使用 Mock 資料庫 (JSON 檔案)
-
-□ Task 2.4: 影片切分與縮圖生成 (4-5 小時)
-  - 獨立的 SegmentService
-  - FFmpeg 切分邏輯
-  - 使用測試影片進行驗證
+□ 素材查詢 API (2-3 小時)
+  - GET /api/videos
+  - GET /api/segments?tags=xxx
+  - 從 Mock DB 讀取
 ```
 
-### 交付成果
-
-- ✅ 完整的影片分析 Pipeline
-- ✅ Prompt 管理系統
-- ✅ 儲存服務
-- ✅ 標籤處理系統
-- ✅ 片段切分系統
-- ✅ Interface 定義文件
-
-### 獨立測試方式
-
-使用 Mock 資料：
-```bash
-npm run test:video-analysis
-# 使用測試影片 test-videos/sample.mp4
-# 輸出分析結果到 mock-output/video-analysis.json
-```
-
----
-
-## Phase 2B: 配音處理模組
-
-**執行者**: Claude C
-**目標**: 完整的配音處理流程（獨立開發）
-**總時間**: 17-21 小時 (2-3 天)
-
-### 完整 Task 列表
+### 前端頁面 (8-12 小時)
 
 ```
-□ Task 2.0: Prompt 管理系統 (已由 Claude B 完成，直接使用)
-
-□ Task 2.5: Whisper STT 整合 (3-4 小時)
-  - 獨立的 STTService
-  - 使用 Mock 音檔進行測試
-  - 輸出帶時間軸的 JSON
-
-□ Task 2.6: 語意分析 (4-5 小時)
-  - 獨立的 SemanticAnalysisService
-  - 使用 Mock Prompt (本地檔案)
-  - 輸出關鍵字與主題 JSON
-
-□ Task 2.7: 配音切分 (3-4 小時)
-  - 獨立的 VoiceoverSegmentService
-  - 基於時間軸切分邏輯
-  - 使用 Mock 資料測試
-
-□ Task 2.8: 候選片段查詢 (3-4 小時)
-  - 獨立的 QueryService
-  - 標籤查詢與相似度排序
-  - 使用 Mock 資料庫
-```
-
-### 交付成果
-
-- ✅ 完整的配音處理 Pipeline
-- ✅ STT 轉錄系統
-- ✅ 語意分析系統
-- ✅ 配音切分系統
-- ✅ 候選片段查詢系統
-- ✅ Interface 定義文件
-
-### 獨立測試方式
-
-使用 Mock 資料：
-```bash
-npm run test:voiceover
-# 使用測試音檔 test-audio/sample.mp3
-# 輸出分析結果到 mock-output/voiceover-analysis.json
-```
-
----
-
-## Phase 2C: AI 選片模組
-
-**執行者**: Claude D
-**目標**: 完整的 AI 選片與時間軸生成（獨立開發）
-**總時間**: 16-20 小時 (2-3 天)
-
-### 完整 Task 列表
-
-```
-□ Task 2.9: AI 選片決策 (5-6 小時)
-  - 獨立的 AISelectionService
-  - 使用 Mock Prompt 與候選片段
-  - 輸出選片決策 JSON
-
-□ Task 2.10: 時間軸生成 (4-5 小時)
-  - 獨立的 TimelineService
-  - 生成標準時間軸格式
-  - 快取邏輯 (使用本地檔案模擬 Redis)
-
-□ Task 2.16: Prompt A/B 測試機制 (3-4 小時)
-  - Prompt 版本管理
-  - 效果追蹤與比較
-
-□ Task 整合測試 (4-5 小時)
-  - 端到端測試框架
-  - 使用 Mock 資料測試完整流程
-```
-
-### 交付成果
-
-- ✅ AI 選片系統
-- ✅ 時間軸生成系統
-- ✅ Prompt A/B 測試機制
-- ✅ Interface 定義文件
-
-### 獨立測試方式
-
-使用 Mock 資料：
-```bash
-npm run test:ai-selection
-# 使用 Mock 候選片段 mock-data/candidates.json
-# 輸出時間軸到 mock-output/timeline.json
-```
-
----
-
-## Phase 2D: 影片合成模組
-
-**執行者**: Claude E
-**目標**: 完整的影片合成流程（獨立開發）
-**總時間**: 19-24 小時 (2-3 天)
-
-### 完整 Task 列表
-
-```
-□ Task 2.11: FFmpeg 環境設定 (2-3 小時)
-  - FFmpeg 安裝與測試
-  - FFmpegWrapper 模組
-
-□ Task 2.12: 基礎影片合成 (4-5 小時)
-  - 獨立的 VideoCompositionService
-  - 片段拼接邏輯
-  - 異步處理機制
-
-□ Task 2.13: 字幕疊加 (3-4 小時)
-  - 獨立的 SubtitleService
-  - SRT 生成與疊加
-
-□ Task 2.14: 配樂整合 (3-4 小時)
-  - 獨立的 MusicService
-  - 音樂淡入淡出
-  - 音量自動調整
-
-□ Task 整合測試 (4-5 小時)
-  - 使用 Mock 時間軸測試
-  - 完整影片生成驗證
-
-□ Task Cloud Run 部署準備 (3-4 小時)
-  - Dockerfile 設定
-  - Timeout 與資源配置
-```
-
-### 交付成果
-
-- ✅ 完整的影片合成 Pipeline
-- ✅ FFmpeg 整合
-- ✅ 字幕系統
-- ✅ 配樂系統
-- ✅ 異步處理機制
-- ✅ Cloud Run 部署配置
-
-### 獨立測試方式
-
-使用 Mock 資料：
-```bash
-npm run test:composition
-# 使用 Mock 時間軸 mock-data/timeline.json
-# 輸出影片到 mock-output/final-video.mp4
-```
-
----
-
-## Phase 3A: 基礎前端設施
-
-**執行者**: Claude A（完成 Phase 0 後）
-**目標**: Next.js 專案與認證系統
-**總時間**: 5-7 小時 (1 天)
-
-### 完整 Task 列表
-
-```
-□ Task 3.1: Next.js 專案設定 (2-3 小時)
-  - 專案初始化
-  - 路由結構
-  - 共用組件庫
-
-□ Task 3.2: 登入/註冊頁面 (3-4 小時)
-  - 整合 Supabase Auth
-  - 表單驗證
-```
-
-### 交付成果
-
-- ✅ Next.js 專案骨架
-- ✅ 認證系統
-- ✅ 共用組件庫
-
----
-
-## Phase 3B: 素材管理介面
-
-**執行者**: Claude B（完成 Phase 2A 後）
-**目標**: 素材上傳與管理
-**總時間**: 8-10 小時 (1-2 天)
-
-### 完整 Task 列表
-
-```
-□ Task 3.3: 素材上傳介面 (4-5 小時)
+□ 素材上傳頁面 (4-5 小時)
   - 拖曳上傳組件
   - 上傳進度顯示
-  - 使用 Mock API
+  - 呼叫上傳 API
 
-□ Task 3.4: 素材庫瀏覽 (4-5 小時)
-  - 素材列表與篩選
+□ 素材庫頁面 (4-5 小時)
+  - 素材列表
+  - 標籤篩選
   - 預覽功能
-  - 使用 Mock 資料
 ```
 
-### 交付成果
+### 獨立測試
 
-- ✅ 素材上傳系統
-- ✅ 素材管理介面
+```bash
+# 測試上傳
+curl -X POST /api/videos/upload -F "video=@test.mp4"
+
+# 啟動前端
+npm run dev:video-material
+```
 
 ---
 
-## Phase 3C: 配音管理介面
+## 垂直切片 2: 配音處理（Voiceover）
 
-**執行者**: Claude C（完成 Phase 2B 後）
-**目標**: 配音錄製與上傳
-**總時間**: 5-6 小時 (1 天)
+**執行者**: Claude B
+**目標**: 完整的配音上傳、轉錄、分析流程（API + 前端）
+**總時間**: 16-22 小時 (2-3 天)
+**可立即開始**: ✅
 
-### 完整 Task 列表
+### 後端 API (9-11 小時)
 
 ```
-□ Task 3.5: 配音錄製/上傳 (5-6 小時)
+□ 配音上傳 API (2-3 小時)
+  - POST /api/voiceovers/upload
+  - 使用 Mock GCS
+  - 儲存到 Mock DB
+
+□ STT 轉錄 API (3-4 小時)
+  - POST /api/voiceovers/:id/transcribe
+  - Mock Whisper API (回傳假資料)
+  - 儲存轉錄結果
+
+□ 語意分析 API (4-5 小時)
+  - POST /api/voiceovers/:id/analyze
+  - Mock Gemini API
+  - 提取關鍵字
+
+□ 配音查詢 API (2-3 小時)
+  - GET /api/voiceovers
+  - 從 Mock DB 讀取
+```
+
+### 前端頁面 (7-11 小時)
+
+```
+□ 配音錄製/上傳頁面 (4-6 小時)
   - 錄音功能
   - 音檔上傳
   - 波形顯示
-  - 使用 Mock API
+
+□ 配音管理頁面 (3-5 小時)
+  - 配音列表
+  - 轉錄文字顯示
+  - 關鍵字標籤
 ```
-
-### 交付成果
-
-- ✅ 配音管理系統
 
 ---
 
-## Phase 3D: 影片生成介面
+## 垂直切片 3: AI 選片與時間軸（AI Selection）
 
-**執行者**: Claude D（完成 Phase 2C 後）
-**目標**: 影片生成與編輯
-**總時間**: 15-20 小時 (2-3 天)
+**執行者**: Claude C
+**目標**: 完整的 AI 選片、時間軸生成流程（API + 前端）
+**總時間**: 18-24 小時 (2-3 天)
+**可立即開始**: ✅
 
-### 完整 Task 列表
+### 後端 API (10-14 小時)
 
 ```
-□ Task 3.6: 影片生成介面 (4-5 小時)
-  - 生成參數設定
-  - 進度輪詢邏輯
-  - 進度條 UI
-  - 使用 Mock API
+□ 候選片段查詢 API (3-4 小時)
+  - GET /api/selection/candidates
+  - 根據關鍵字查詢 Mock 片段
+  - 相似度排序
 
-□ Task 3.7: 影片預覽播放 (3-4 小時)
-  - 影片播放器
-  - 播放控制
+□ AI 選片 API (5-7 小時)
+  - POST /api/selection/select
+  - Mock Gemini API
+  - 輸出選片決策
 
-□ Task 3.8: 下載與分享 (2-3 小時)
-  - 下載功能
-  - 分享連結
+□ 時間軸生成 API (4-5 小時)
+  - POST /api/timelines/generate
+  - 生成時間軸 JSON
+  - 儲存到 Mock DB
 
-□ Task 3.9: 時間軌編輯器 (6-8 小時)
-  - 時間軌 UI 組件
-  - 片段替換功能
-  - 即時預覽
-  - 使用 Mock 時間軸資料
+□ Prompt 管理 API (2-3 小時)
+  - GET/POST /api/prompts
+  - 版本控制
 ```
 
-### 交付成果
+### 前端頁面 (8-10 小時)
 
-- ✅ 影片生成系統
-- ✅ 時間軌編輯器
-- ✅ 預覽與分享功能
+```
+□ 選片參數設定頁面 (3-4 小時)
+  - 上傳配音
+  - 設定選片參數
+
+□ 時間軸預覽頁面 (5-6 小時)
+  - 時間軸可視化
+  - 片段預覽
+```
 
 ---
 
-## Phase 4: 批次整合階段
+## 垂直切片 4: 影片合成（Composition）
+
+**執行者**: Claude D
+**目標**: 完整的影片合成、渲染流程（API + 前端）
+**總時間**: 18-24 小時 (2-3 天)
+**可立即開始**: ✅
+
+### 後端 API (12-16 小時)
+
+```
+□ FFmpeg 環境設定 (2-3 小時)
+  - 安裝 FFmpeg
+  - FFmpegWrapper
+
+□ 影片合成 API (5-7 小時)
+  - POST /api/composition/render
+  - 讀取 Mock 時間軸
+  - FFmpeg 合成
+  - 異步處理 (Bull Queue)
+
+□ 字幕生成 API (3-4 小時)
+  - SRT 生成
+  - 字幕疊加
+
+□ 配樂整合 API (2-3 小時)
+  - 音樂混音
+  - 音量調整
+```
+
+### 前端頁面 (6-8 小時)
+
+```
+□ 合成參數設定頁面 (3-4 小時)
+  - 字幕樣式設定
+  - 配樂選擇
+
+□ 渲染進度頁面 (3-4 小時)
+  - 進度條
+  - 輪詢狀態
+```
+
+---
+
+## 垂直切片 5: 基礎設施與管理（Infrastructure）
+
+**執行者**: Claude E
+**目標**: 基礎設施、認證、監控、管理後台
+**總時間**: 20-26 小時 (2-3 天)
+**可立即開始**: ✅
+
+### 基礎設施 (12-16 小時)
+
+```
+□ 專案初始化 (2-3 小時)
+  - package.json
+  - tsconfig.json
+  - 目錄結構
+
+□ Mock 資料庫系統 (3-4 小時)
+  - JSON 檔案 CRUD
+  - 簡易查詢功能
+
+□ 認證系統 (3-4 小時)
+  - Mock Supabase Auth
+  - JWT Token
+
+□ Logger 系統 (2-3 小時)
+  - 日誌記錄
+  - 儲存到檔案
+
+□ 成本追蹤系統 (2-3 小時)
+  - API 呼叫計數
+  - 成本統計
+```
+
+### 管理後台 (8-10 小時)
+
+```
+□ Dashboard 頁面 (3-4 小時)
+  - 系統狀態
+  - 關鍵指標
+
+□ 成本監控頁面 (3-4 小時)
+  - 成本報表
+  - 趨勢圖表
+
+□ 任務管理頁面 (2-3 小時)
+  - 任務列表
+  - 任務重試
+```
+
+---
+
+## 整合階段: 組合所有垂直切片
 
 **執行者**: 全員協作
-**目標**: 整合所有獨立模組
+**目標**: 整合所有垂直切片，替換 Mock 為真實 API
 **總時間**: 2-3 天
 
 ### Step 1: Interface 對齊 (半天)
 
-**所有 Claude 一起進行**：
 ```
-□ 檢查所有模組的輸入/輸出格式
+□ 檢查所有 API 的輸入/輸出格式
 □ 確保 Interface 契約一致
-□ 更新文件與範例
+□ 測試 API 互通性
 ```
 
-### Step 2: 模組整合 (1-2 天)
+### Step 2: 替換 Mock (1-2 天)
 
-**Claude A 主導，其他人協助**：
-```
-□ Task 4.1: 模組整合 (8-10 小時)
-  - 替換 Mock 資料為真實 API
-  - 連接所有模組
-  - 端到端測試
-
-□ Task 4.2: 效能測試與優化 (4-5 小時)
-  - 壓力測試
-  - 效能調優
-```
-
-### Step 3: 部署 (半天)
-
-**Claude E 主導**：
-```
-□ Task 4.3: GCP Cloud Run 部署 (4-5 小時)
-□ Task 4.4: Vercel 前端部署 (2-3 小時)
-□ Task 4.5: 監控與告警設定 (3-4 小時)
-```
-
-### Phase 4 完成標準
-
-- [ ] 所有模組成功整合
-- [ ] 端到端測試通過
-- [ ] 已部署到正式環境
-- [ ] 監控系統運作中
-
----
-
-## Phase 5: 管理後台開發（獨立並行）
-
-**目標**: 建立管理後台各模組
-**時間**: 預估 2-3 天
-**執行方式**: 5 人完全獨立並行
-
----
-
-## Phase 5A: Dashboard 總覽
-
-**執行者**: Claude A
-**總時間**: 5-6 小時
+各 Claude 負責自己的部分：
 
 ```
-□ Task 5.1: Dashboard 總覽頁面
-  - 系統狀態總覽
-  - 關鍵指標顯示
-  - 使用 Mock 資料
+□ Claude A: 替換 Mock GCS 為真實 GCS
+□ Claude A: 替換 Mock Video AI 為真實 API
+□ Claude B: 替換 Mock Whisper 為真實 API
+□ Claude B: 替換 Mock Gemini 為真實 API
+□ Claude C: 替換 Mock Gemini 為真實 API
+□ Claude E: 替換 Mock DB 為真實 Supabase
+□ Claude E: 設定 Redis
+```
+
+### Step 3: 端到端測試 (半天)
+
+```
+□ 完整流程測試（上傳素材 → 上傳配音 → 生成影片）
+□ 效能測試
+□ 部署到 Cloud Run / Vercel
 ```
 
 ---
 
-## Phase 5B: 成本監控模組
+## 📊 整體時間軸預估（真正並行模式）
 
-**執行者**: Claude B
-**總時間**: 9-11 小時
+| 垂直切片 | 執行方式 | 負責人 | 工作量 | 實際日曆時間 |
+|---------|---------|-------|--------|------------|
+| **切片 1: 影片素材** | 獨立 | Claude A | 18-24 小時 | 2-3 天 |
+| **切片 2: 配音處理** | 獨立 | Claude B | 16-22 小時 | 2-3 天 |
+| **切片 3: AI 選片** | 獨立 | Claude C | 18-24 小時 | 2-3 天 |
+| **切片 4: 影片合成** | 獨立 | Claude D | 18-24 小時 | 2-3 天 |
+| **切片 5: 基礎設施** | 獨立 | Claude E | 20-26 小時 | 2-3 天 |
+| **整合階段** | 協作 | 全員 | 16-21 小時 | 2-3 天 |
 
-```
-□ Task 5.2: 成本分析模組 (5-6 小時)
-  - 成本報表
-  - 趨勢分析
-  - 使用 Mock 資料
-
-□ Task 5.3: 效能監控模組 (4-5 小時)
-  - 效能指標
-  - 告警設定
-  - 使用 Mock 資料
-```
-
----
-
-## Phase 5C: 系統管理模組
-
-**執行者**: Claude C
-**總時間**: 9-11 小時
+### 時間軸視覺化（真正並行！）
 
 ```
-□ Task 5.4: 任務管理模組 (5-6 小時)
-  - 任務列表
-  - 任務重試
-  - 使用 Mock 資料
+DAY 0: 準備 (1 小時)
+  用戶或 Claude E: 建立基本專案結構 + Interface 定義
 
-□ Task 5.5: 用戶管理模組 (4-5 小時)
-  - 用戶列表
-  - 配額管理
-  - 使用 Mock 資料
+DAY 1-3: 五個人同時並行開發！
+  Claude A: [======== 垂直切片 1: 影片素材 ========]
+  Claude B: [======== 垂直切片 2: 配音處理 ========]
+  Claude C: [======== 垂直切片 3: AI 選片 ========]
+  Claude D: [======== 垂直切片 4: 影片合成 ========]
+  Claude E: [======== 垂直切片 5: 基礎設施 ========]
+
+DAY 4-6: 整合階段
+  全員:     [========= 整合所有切片 =========]
 ```
 
----
+**總日曆時間**: 約 **6 天**（相比原本 12-18 天，快一倍！）
+**總工作量**: 90-116 人時
+**平均每人**: 18-23 小時
 
-## Phase 5D: 設定管理模組
-
-**執行者**: Claude D
-**總時間**: 5-6 小時
-
-```
-□ Task 5.6: 系統設定與 Prompt 管理
-  - Prompt 版本管理
-  - 快取設定
-  - 使用 Mock 資料
-```
-
----
-
-## Phase 5E: 權限與安全
-
-**執行者**: Claude E
-**總時間**: 6-8 小時
-
-```
-□ Task 5.7: 權限控制系統 (新增)
-  - 角色管理
-  - 權限檢查
-  - 使用 Mock 資料
-```
-
----
-
-## 📊 整體時間軸預估（獨立開發模式）
-
-| Phase | 執行方式 | 負責人 | 工作量 | 實際日曆時間 |
-|-------|---------|-------|--------|------------|
-| **Phase 0** | 獨立 | Claude A | 25-36 小時 | 3-4 天 |
-| **Phase 2A** | 獨立 | Claude B | 18-23 小時 | 2-3 天 |
-| **Phase 2B** | 獨立 | Claude C | 17-21 小時 | 2-3 天 |
-| **Phase 2C** | 獨立 | Claude D | 16-20 小時 | 2-3 天 |
-| **Phase 2D** | 獨立 | Claude E | 19-24 小時 | 2-3 天 |
-| **Phase 3A** | 獨立 | Claude A | 5-7 小時 | 1 天 |
-| **Phase 3B** | 獨立 | Claude B | 8-10 小時 | 1-2 天 |
-| **Phase 3C** | 獨立 | Claude C | 5-6 小時 | 1 天 |
-| **Phase 3D** | 獨立 | Claude D | 15-20 小時 | 2-3 天 |
-| **Phase 4** | 協作 | 全員 | 16-21 小時 | 2-3 天 |
-| **Phase 5A-E** | 獨立 | 各自 | 5-11 小時 | 1-2 天 |
-
-### 時間軸視覺化
-
-```
-Week 1:
-  Claude A: [======= Phase 0 =======]
-  Claude B:                          [=== Phase 2A ===]
-  Claude C:                          [=== Phase 2B ===]
-  Claude D:                          [=== Phase 2C ===]
-  Claude E:                          [=== Phase 2D ===]
-
-Week 2:
-  Claude A:                          [P3A]
-  Claude B:                          [P3B]
-  Claude C:                          [P3C]
-  Claude D:                          [==== Phase 3D ====]
-  Claude E:                          (待命)
-
-Week 2-3:
-  全員:                              [=== Phase 4 整合 ===]
-
-Week 3:
-  Claude A: [P5A]
-  Claude B: [== P5B ==]
-  Claude C: [== P5C ==]
-  Claude D: [P5D]
-  Claude E: [P5E]
-```
-
-**總日曆時間**: 約 2-3 週
-**總工作量**: 149-199 人時
-**平均每人**: 30-40 小時
-
-**關鍵優勢**:
-- ✅ 無需等待同步點
-- ✅ 每個人都能持續開發
-- ✅ 整合風險集中在 Phase 4
-- ✅ 更容易掌控進度
+**真正的並行優勢**:
+- ✅ **五個人同時開始**，無人閒置
+- ✅ 每個人負責完整的垂直切片（API + 前端）
+- ✅ 使用 Mock 完全獨立開發
+- ✅ Git 衝突極少（不同目錄）
+- ✅ 整合階段才替換 Mock
 
 ---
 
@@ -715,35 +486,63 @@ Week 3:
 
 ---
 
-## 🚀 啟動流程
+## 🚀 啟動流程（真正並行）
 
-### Step 1: Claude A 建立基礎（第一週）
+### DAY 0: 準備（1 小時，用戶或 Claude E）
 
-1. 建立 Interface 定義
-2. 建立 Mock 資料產生器
-3. 完成 Phase 0
-4. 通知其他 Claude 可以開始
+1. **建立基本專案結構**：
+   ```bash
+   mkdir cheapcut && cd cheapcut
+   npm init -y
+   mkdir -p src/{api,frontend,mock-db,interfaces}
+   ```
 
-### Step 2: 其他 Claude 同時開始（第一週末）
+2. **建立 Interface 定義文件**：
+   ```typescript
+   // src/interfaces/video.interface.ts
+   // src/interfaces/voiceover.interface.ts
+   // src/interfaces/timeline.interface.ts
+   // src/interfaces/composition.interface.ts
+   ```
 
-1. Clone repository
-2. 切換到各自的 feature branch
-3. 閱讀 Interface 文件
-4. 開始各自的 Phase 開發
+3. **建立 Mock 資料目錄**：
+   ```bash
+   mkdir -p mock-data/{videos,voiceovers,timelines}
+   mkdir -p test-assets/{videos,audio}
+   ```
 
-### Step 3: 獨立開發（第二週）
+4. **所有人 clone repo**
+
+### DAY 1: 五個人同時開始！
+
+**所有 Claude 同時執行**：
+
+1. 切換到各自的 feature branch：
+   - `git checkout -b feature/video-material` (Claude A)
+   - `git checkout -b feature/voiceover` (Claude B)
+   - `git checkout -b feature/ai-selection` (Claude C)
+   - `git checkout -b feature/composition` (Claude D)
+   - `git checkout -b feature/infrastructure` (Claude E)
+
+2. 閱讀 Interface 文件
+
+3. 開始各自的垂直切片開發
+
+4. 使用 Mock 資料測試
+
+### DAY 2-3: 持續獨立開發
 
 1. 各自按照計劃開發
-2. 使用 Mock 資料進行測試
-3. 定期 commit 到各自的 branch
-4. 更新進度追蹤文件
+2. 定期 commit 到各自的 branch
+3. 不需要等待其他人
 
-### Step 4: 批次整合（第二週末）
+### DAY 4-6: 整合階段
 
-1. 所有人完成各自 Phase
-2. 進入 Phase 4 整合階段
-3. 一起進行整合測試
-4. 部署到正式環境
+1. 所有人完成各自的垂直切片
+2. Merge 所有 branch
+3. 替換 Mock 為真實 API
+4. 端到端測試
+5. 部署
 
 ---
 
@@ -756,16 +555,16 @@ Week 3:
 ---
 
 **完成檢查**:
-- [x] 重新設計為獨立開發模式
+- [x] 重新設計為真正並行開發模式
+- [x] 改為垂直切片（API + 前端）
 - [x] 移除所有同步點依賴
-- [x] 明確了每個 Claude 的獨立 Phase
-- [x] 定義了 Interface First 策略
-- [x] 提供了新的時間軸預估
-- [x] 更新了風險管理策略
-- [x] 提供了啟動流程
+- [x] **五個人可以同時在 DAY 1 開始**
+- [x] 定義了 Mock First 策略
+- [x] 提供了新的時間軸預估（6 天完成！）
+- [x] 更新了啟動流程
 
 **準備開始**:
-- [ ] 修復所有 P0 問題
-- [ ] Claude A 建立 Interface 定義
-- [ ] 確認環境準備完成
-- [ ] Claude A 開始 Phase 0
+- [ ] DAY 0: 建立基本專案結構（1 小時）
+- [ ] DAY 0: 建立 Interface 定義文件
+- [ ] DAY 1: 五個 Claude 同時開始各自的垂直切片
+- [ ] DAY 4: 開始整合
