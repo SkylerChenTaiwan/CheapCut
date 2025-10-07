@@ -26,3 +26,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - 不管是用戶要求檢查，還是自動完成檢查
 - 都必須在檢查列表上做標記（勾選）
 - 確保文件狀態與實際進度一致
+
+## 規則 4: 不要隨意增加 Fallback
+
+撰寫程式碼時，避免使用 fallback 機制來掩蓋問題。
+
+- 遇到問題時應該讓程式直接停下來
+- 讓問題清楚地顯現出來，而不是用 fallback 無聲地處理
+- 避免程式一路執行到最後才發現結果不符預期
+- 明確的錯誤比隱藏的問題更容易診斷和修復
