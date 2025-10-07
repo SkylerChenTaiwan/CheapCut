@@ -1,15 +1,15 @@
-# Task 2.14: Logger 服務實作
+# Task 1.5: Logger 服務實作
 
 ## Task 資訊
 
 | 項目 | 內容 |
 |------|------|
-| **Task ID** | 2.14 |
+| **Task ID** | 1.5 |
 | **Task 名稱** | Logger 服務實作 |
-| **所屬 Phase** | Phase 2: 核心功能開發 |
-| **預估時間** | 2-3 小時 |
-| **前置 Task** | Task 2.13 (字幕疊加) |
-| **檔案位置** | `docs/implementation-plan/phase-2-core-features/task-2.14-logger-service.md` |
+| **所屬 Phase** | Phase 1: 基礎設施建立 |
+| **預估時間** | 4-5 小時 |
+| **前置 Task** | Task 1.4 (Redis 快取設定) |
+| **檔案位置** | `docs/implementation-plan/phase-1-infrastructure/task-1.5-logger-service.md` |
 
 ---
 

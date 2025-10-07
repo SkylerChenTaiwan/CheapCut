@@ -1,15 +1,15 @@
-# Task 2.15: 成本追蹤服務
+# Task 1.6: 成本追蹤服務
 
 ## Task 資訊
 
 | 項目 | 內容 |
 |------|------|
-| **Task ID** | 2.15 |
+| **Task ID** | 1.6 |
 | **Task 名稱** | 成本追蹤服務 |
-| **所屬 Phase** | Phase 2: 核心功能開發 |
+| **所屬 Phase** | Phase 1: 基礎設施建立 |
 | **預估時間** | 3-4 小時 |
-| **前置 Task** | Task 2.14 (Logger 服務實作) |
-| **檔案位置** | `docs/implementation-plan/phase-2-core-features/task-2.15-cost-tracker.md` |
+| **前置 Task** | Task 1.5 (Logger 服務實作) |
+| **檔案位置** | `docs/implementation-plan/phase-1-infrastructure/task-1.6-cost-tracker.md` |
 
 ---
 
