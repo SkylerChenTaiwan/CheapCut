@@ -478,24 +478,25 @@ CREATE TABLE videos (
   user_id UUID NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
 
   -- 檔案資訊
-  original_filename VARCHAR(255) NOT NULL,
   file_path TEXT NOT NULL,
   file_size BIGINT NOT NULL,
-  mime_type VARCHAR(50) NOT NULL,
 
   -- 影片資訊
   duration DECIMAL(10, 2) NOT NULL,
   resolution VARCHAR(20),
-  fps INTEGER,
+  format VARCHAR(20),
 
   -- 狀態
-  status VARCHAR(20) DEFAULT 'uploaded',
-  -- uploaded | analyzing | analyzed | failed
+  status VARCHAR(20) DEFAULT 'pending',
+  -- pending | analyzing | analyzed | failed
+
+  error_message TEXT,
+
+  -- Metadata (JSON)
+  metadata JSONB,
 
   -- 時間戳記
-  uploaded_at TIMESTAMP DEFAULT NOW(),
-  analyzed_at TIMESTAMP,
-
+  upload_time TIMESTAMP DEFAULT NOW(),
   created_at TIMESTAMP DEFAULT NOW(),
   updated_at TIMESTAMP DEFAULT NOW()
 );
@@ -517,11 +518,11 @@ CREATE TABLE segments (
   duration DECIMAL(10, 2) NOT NULL,
 
   -- 檔案路徑
-  file_path TEXT,
   thumbnail_url TEXT,
 
-  -- 排序
-  sequence_number INTEGER NOT NULL,
+  -- AI 生成的描述
+  description TEXT,
+  scene_type VARCHAR(50),
 
   created_at TIMESTAMP DEFAULT NOW()
 );
@@ -530,38 +531,24 @@ CREATE INDEX idx_segments_video ON segments(video_id);
 CREATE INDEX idx_segments_duration ON segments(duration);
 
 -- ============================================
--- 標籤表
--- ============================================
-
-CREATE TABLE tags (
-  tag_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  tag_name VARCHAR(100) UNIQUE NOT NULL,
-  category VARCHAR(50),
-  created_at TIMESTAMP DEFAULT NOW()
-);
-
-CREATE INDEX idx_tags_name ON tags(tag_name);
-CREATE INDEX idx_tags_category ON tags(category);
-
--- ============================================
--- 片段標籤關聯表 (Many-to-Many)
+-- 片段標籤表 (直接儲存標籤字串)
 -- ============================================
 
 CREATE TABLE segment_tags (
-  segment_tag_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   segment_id UUID NOT NULL REFERENCES segments(segment_id) ON DELETE CASCADE,
-  tag_id UUID NOT NULL REFERENCES tags(tag_id) ON DELETE CASCADE,
-
-  -- 信心分數
+  tag VARCHAR(100) NOT NULL,
+  tag_type VARCHAR(50),
   confidence DECIMAL(3, 2),
+  source VARCHAR(10) NOT NULL DEFAULT 'ai',
+  -- 'ai' | 'user'
 
   created_at TIMESTAMP DEFAULT NOW(),
 
-  UNIQUE(segment_id, tag_id)
+  PRIMARY KEY (segment_id, tag)
 );
 
+CREATE INDEX idx_segment_tags_tag ON segment_tags(tag);
 CREATE INDEX idx_segment_tags_segment ON segment_tags(segment_id);
-CREATE INDEX idx_segment_tags_tag ON segment_tags(tag_id);
 
 -- ============================================
 -- 配音表
@@ -572,23 +559,22 @@ CREATE TABLE voiceovers (
   user_id UUID NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
 
   -- 檔案資訊
-  original_filename VARCHAR(255) NOT NULL,
   file_path TEXT NOT NULL,
-  file_size BIGINT NOT NULL,
   duration DECIMAL(10, 2) NOT NULL,
 
-  -- 轉錄文字
+  -- STT 轉錄結果
   transcript TEXT,
-  transcript_language VARCHAR(10),
+  transcript_json JSONB,
+  -- 帶時間軸的完整轉錄
+  -- { "segments": [{ "text": "...", "start": 0.0, "end": 1.2 }] }
+
+  -- 語意分析結果
+  semantic_analysis JSONB,
+  -- { "topics": [...], "keywords": [...], "tone": "..." }
 
   -- 狀態
-  status VARCHAR(20) DEFAULT 'uploaded',
-  -- uploaded | transcribing | transcribed | analyzing | analyzed | failed
-
-  -- 時間戳記
-  uploaded_at TIMESTAMP DEFAULT NOW(),
-  transcribed_at TIMESTAMP,
-  analyzed_at TIMESTAMP,
+  status VARCHAR(20) DEFAULT 'pending',
+  -- pending | processed | failed
 
   created_at TIMESTAMP DEFAULT NOW(),
   updated_at TIMESTAMP DEFAULT NOW()
@@ -598,62 +584,56 @@ CREATE INDEX idx_voiceovers_user ON voiceovers(user_id);
 CREATE INDEX idx_voiceovers_status ON voiceovers(status);
 
 -- ============================================
--- 配音片段表 (分析後切分)
+-- 時間軸表 (智能選片結果)
 -- ============================================
 
-CREATE TABLE voiceover_segments (
-  voiceover_segment_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+CREATE TABLE timelines (
+  timeline_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
   voiceover_id UUID NOT NULL REFERENCES voiceovers(voiceover_id) ON DELETE CASCADE,
 
-  -- 時間範圍
-  start_time DECIMAL(10, 2) NOT NULL,
-  end_time DECIMAL(10, 2) NOT NULL,
-  duration DECIMAL(10, 2) NOT NULL,
+  -- 時間軸 JSON (包含所有片段、配樂、字幕資訊)
+  timeline_json JSONB NOT NULL,
 
-  -- 文字內容
-  text TEXT NOT NULL,
+  -- 狀態
+  status VARCHAR(20) DEFAULT 'draft',
+  -- draft | final
 
-  -- 語意分析結果
-  keywords TEXT[],
-  tone VARCHAR(50),
-
-  -- 排序
-  sequence_number INTEGER NOT NULL,
-
-  created_at TIMESTAMP DEFAULT NOW()
+  created_at TIMESTAMP DEFAULT NOW(),
+  updated_at TIMESTAMP DEFAULT NOW()
 );
 
-CREATE INDEX idx_voiceover_segments_voiceover ON voiceover_segments(voiceover_id);
+CREATE INDEX idx_timelines_user ON timelines(user_id);
+CREATE INDEX idx_timelines_voiceover ON timelines(voiceover_id);
+CREATE INDEX idx_timelines_status ON timelines(status);
 
 -- ============================================
 -- 生成影片表
 -- ============================================
 
 CREATE TABLE generated_videos (
-  generated_video_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  video_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+  timeline_id UUID NOT NULL REFERENCES timelines(timeline_id) ON DELETE CASCADE,
   voiceover_id UUID NOT NULL REFERENCES voiceovers(voiceover_id) ON DELETE CASCADE,
 
   -- 影片資訊
-  output_filename VARCHAR(255),
   file_path TEXT,
+  thumbnail_url TEXT,
   file_size BIGINT,
   duration DECIMAL(10, 2),
   resolution VARCHAR(20),
-
-  -- 時間軸 JSON
-  timeline_json JSONB,
+  format VARCHAR(20),
 
   -- 狀態
-  status VARCHAR(20) DEFAULT 'queued',
-  -- queued | selecting | rendering | completed | failed
+  status VARCHAR(20) DEFAULT 'pending',
+  -- pending | processing | completed | failed
 
   -- 錯誤訊息
   error_message TEXT,
 
   -- 時間戳記
   created_at TIMESTAMP DEFAULT NOW(),
-  started_at TIMESTAMP,
   completed_at TIMESTAMP,
   updated_at TIMESTAMP DEFAULT NOW()
 );
@@ -675,18 +655,30 @@ CREATE TABLE task_executions (
 
   -- 關聯資源
   related_id UUID,
-  -- 可能是 video_id, voiceover_id, 或 generated_video_id
+  -- 可能是 video_id, voiceover_id, 或 timeline_id
 
   -- 狀態
-  status VARCHAR(20) DEFAULT 'queued',
-  -- queued | processing | completed | failed
+  status VARCHAR(20) DEFAULT 'pending',
+  -- pending | processing | completed | failed
+
+  -- 進度追蹤
+  current_step VARCHAR(100),
+  step_index INTEGER DEFAULT 0,
+  total_steps INTEGER,
+  steps JSONB,
+  -- [{ "name": "...", "status": "...", "started_at": "...", "completed_at": "...", "result": {...}, "cost": 0.1 }]
+
+  -- 輸入輸出
+  input_data JSONB,
+  output_data JSONB,
 
   -- 成本與效能
-  total_cost DECIMAL(10, 4) DEFAULT 0,
+  total_cost DECIMAL(10, 6) DEFAULT 0,
   ai_calls_count INTEGER DEFAULT 0,
-  duration INTEGER,
+  total_tokens INTEGER DEFAULT 0,
+  execution_time INTEGER,
 
-  -- 錯誤訊息
+  -- 錯誤處理
   error_message TEXT,
   failed_step VARCHAR(100),
 
@@ -715,7 +707,7 @@ CREATE TABLE cost_records (
 
   -- 服務資訊
   service VARCHAR(50) NOT NULL,
-  -- openai | google_video_ai | whisper | cloudflare_stream | s3 | cloudfront
+  -- gemini | openai | whisper | google_video_ai | gcs | cloudflare_stream
   operation VARCHAR(100) NOT NULL,
 
   -- 成本計算
@@ -730,6 +722,7 @@ CREATE TABLE cost_records (
 
   -- 額外資訊
   metadata JSONB,
+  -- { "model": "gemini-flash", "prompt_name": "...", "prompt_version": 2, "request_tokens": 1500, "response_tokens": 500 }
 
   created_at TIMESTAMP DEFAULT NOW()
 );
@@ -744,12 +737,13 @@ CREATE INDEX idx_cost_records_service ON cost_records(service, created_at DESC);
 
 CREATE TABLE system_logs (
   log_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  timestamp TIMESTAMP NOT NULL DEFAULT NOW(),
 
-  -- 級別與類型
+  -- 時間與級別
+  timestamp TIMESTAMP NOT NULL DEFAULT NOW(),
   level VARCHAR(10) NOT NULL,
   -- DEBUG | INFO | WARN | ERROR
   type VARCHAR(50) NOT NULL,
+  -- API_REQUEST | AI_CALL | DB_QUERY | FILE_OPERATION | TASK_EXECUTION | ERROR
 
   -- 關聯資訊
   execution_id UUID,
@@ -760,7 +754,7 @@ CREATE TABLE system_logs (
   -- 日誌內容
   data JSONB NOT NULL,
 
-  -- 索引欄位
+  -- 索引欄位 (從 data 中提取，方便查詢)
   service VARCHAR(50),
   operation VARCHAR(100),
   step_name VARCHAR(100),
@@ -820,7 +814,17 @@ describe('Database Schema Verification', () => {
 - [ ] `migrations/001_initial_schema.sql` 檔案已建立
 
 #### Functional Acceptance
-- [ ] 所有 11 張資料表已建立
+- [ ] 所有 10 張資料表已建立：
+  - [ ] users
+  - [ ] videos
+  - [ ] segments
+  - [ ] segment_tags
+  - [ ] voiceovers
+  - [ ] timelines
+  - [ ] generated_videos
+  - [ ] task_executions
+  - [ ] cost_records
+  - [ ] system_logs
 - [ ] 所有 Foreign Key 關聯正確設定
 - [ ] 所有索引已建立
 - [ ] 可以成功 INSERT 測試資料到每張表

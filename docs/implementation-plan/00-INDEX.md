@@ -21,12 +21,12 @@
 | Phase | 名稱 | Tasks 數量 | 預估時間 | 狀態 |
 |-------|------|-----------|---------|------|
 | **Phase 0** | [測試環境建立](#phase-0-測試環境建立) | 3 | 3-5 天 | ⏸ 待開始 |
-| **Phase 1** | [基礎設施建立](#phase-1-基礎設施建立) | 3 | 5-7 天 | ⏸ 待開始 |
-| **Phase 2** | [核心引擎實作](#phase-2-核心引擎實作) | 15 | 10-14 天 | ⏸ 待開始 |
+| **Phase 1** | [基礎設施建立](#phase-1-基礎設施建立) | 4 | 6-9 天 | ⏸ 待開始 |
+| **Phase 2** | [核心引擎實作](#phase-2-核心引擎實作) | 16 | 11-16 天 | ⏸ 待開始 |
 | **Phase 3** | [前端介面開發](#phase-3-前端介面開發) | 8 | 7-10 天 | ⏸ 待開始 |
 | **Phase 4** | [整合測試與部署](#phase-4-整合測試與部署) | 5 | 3-5 天 | ⏸ 待開始 |
 
-**總計**: 34 個 Tasks
+**總計**: 36 個 Tasks
 
 ---
 
@@ -51,7 +51,7 @@
 
 ## Phase 1: 基礎設施建立
 
-**目標**: 建立資料庫、認證、API 框架
+**目標**: 建立資料庫、認證、API 框架、Redis 快取
 
 **資料夾**: `phase-1-infrastructure/`
 
@@ -60,20 +60,29 @@
 | 1.1 | [task-1.1-database-schema.md](./phase-1-infrastructure/task-1.1-database-schema.md) | 建立資料庫 Schema | 2-3 小時 | ✅ 文件完成 |
 | 1.2 | [task-1.2-supabase-auth.md](./phase-1-infrastructure/task-1.2-supabase-auth.md) | 設定 Supabase Auth | 2-3 小時 | ✅ 文件完成 |
 | 1.3 | [task-1.3-api-framework.md](./phase-1-infrastructure/task-1.3-api-framework.md) | 建立 API 基礎架構 | 3-4 小時 | ✅ 文件完成 |
+| 1.4 | [task-1.4-redis-setup.md](./phase-1-infrastructure/task-1.4-redis-setup.md) | Redis 快取設定 | 2-3 小時 | ✅ 文件完成 |
 
 **Phase 1 完成標準**:
 - [ ] 資料庫 Schema 建立完成
 - [ ] 用戶可以註冊/登入
 - [ ] API 伺服器可運作
 - [ ] 所有 API 路由骨架建立
+- [ ] Redis 快取正常運作
+- [ ] 背景任務佇列已設定
 
 ---
 
 ## Phase 2: 核心引擎實作
 
-**目標**: 實作素材處理、配音處理、智能選片、影片合成四大引擎
+**目標**: 實作 Prompt 管理、素材處理、配音處理、智能選片、影片合成引擎
 
 **資料夾**: `phase-2-engines/`
+
+### 2.0 Prompt 管理系統（必須優先完成）
+
+| Task | 檔案 | 說明 | 預估時間 | 狀態 |
+|------|------|------|---------|------|
+| 2.0 | [task-2.0-prompt-management.md](./phase-2-engines/task-2.0-prompt-management.md) | Prompt 管理系統 | 3-4 小時 | ✅ 文件完成 |
 
 ### 2.A 素材處理引擎 (Material Processing Engine)
 
@@ -116,6 +125,7 @@
 | 2.15 | task-2.15-cost-tracker.md | 成本追蹤服務 | 3-4 小時 | ✅ 文件完成 |
 
 **Phase 2 完成標準**:
+- [ ] Prompt 管理系統正常運作
 - [ ] 可以上傳素材影片並自動分析
 - [ ] 可以上傳配音並自動轉錄、分析
 - [ ] 可以根據配音自動選片
@@ -179,11 +189,11 @@
 | Phase | 已完成 | 總數 | 進度 |
 |-------|--------|------|------|
 | Phase 0 | 3 | 3 | 100% ✅ |
-| Phase 1 | 3 | 3 | 100% ✅ |
-| Phase 2 | 15 | 15 | 100% ✅ |
+| Phase 1 | 4 | 4 | 100% ✅ |
+| Phase 2 | 16 | 16 | 100% ✅ |
 | Phase 3 | 8 | 8 | 100% ✅ |
 | Phase 4 | 5 | 5 | 100% ✅ |
-| **總計** | **34** | **34** | **100%** ✅ |
+| **總計** | **36** | **36** | **100%** ✅ |
 
 ### 實作進度
 
@@ -214,6 +224,7 @@
 
 | 日期 | 更新內容 | 更新者 |
 |------|---------|--------|
+| 2025-10-07 | 修正資料庫 Schema 與 Overall Design 的矛盾，新增 Task 1.4 (Redis) 和 Task 2.0 (Prompt 管理) | Claude |
 | 2025-10-07 | 所有 Phase (1-4) 的 Task 文件骨架建立完成 (共 31 個文件) | Claude |
 | 2025-10-07 | Phase 0 所有文件撰寫完成 (Task 0.1, 0.2, 0.3) | Claude |
 | 2025-10-07 | 建立 INDEX 文件,整理文件編號 | Claude |
