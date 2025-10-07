@@ -126,7 +126,7 @@ ls supabase/
 
 ### 完成後你會有:
 
-- 11 張完整的資料表 (7 張業務表 + 4 張系統表)
+- 13 張完整的資料表 (7 張業務表 + 4 張系統表 + 2 張 Prompt 管理表)
 - 所有必要的索引 (加速查詢)
 - 外鍵關聯 (確保資料一致性)
 - Row Level Security 設定 (資料安全)
@@ -674,6 +674,116 @@ CREATE TABLE IF NOT EXISTS system_logs (
 -- - 按 execution_id 查詢時更方便 (不用 JOIN 多張表)
 -- - PostgreSQL 的 JSONB 可以高效儲存不同結構的 log
 -- - 可以用 type 欄位區分不同類型的 log
+
+-- =====================================================
+-- 3. Prompt 管理表 (Prompt Management Tables)
+-- 說明: 支援 Prompt 版本管理與 A/B 測試 (Task 2.16 依賴)
+-- =====================================================
+
+-- -----------------------------------------------------
+-- 3.1 Prompt 版本記錄表 (prompt_versions)
+-- 說明: 記錄每個 Prompt 的版本資訊,支援 A/B 測試
+-- -----------------------------------------------------
+CREATE TABLE IF NOT EXISTS prompt_versions (
+  -- 主鍵
+  version_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+
+  -- Prompt 識別
+  category VARCHAR(100) NOT NULL,           -- 分類 (voiceover-processing, segment-selection...)
+  name VARCHAR(100) NOT NULL,               -- Prompt 名稱
+  version INTEGER NOT NULL,                 -- 版本號
+
+  -- Git 資訊 (追蹤版本變更)
+  git_commit_hash VARCHAR(40),              -- Git commit hash
+  git_commit_message TEXT,                  -- Commit message
+  git_author VARCHAR(255),                  -- 作者
+
+  -- 檔案資訊
+  file_path TEXT NOT NULL,                  -- Prompt 檔案路徑
+  file_content_hash VARCHAR(64) NOT NULL,   -- 內容 SHA256 hash
+
+  -- Prompt Metadata (從 frontmatter 取得)
+  model VARCHAR(50),                        -- AI model (gpt-4, gemini-1.5-flash...)
+  temperature NUMERIC(3,2),                 -- Temperature 參數
+  variables JSONB,                          -- 變數列表
+  notes TEXT,                               -- 版本說明
+
+  -- A/B 測試設定
+  is_active BOOLEAN DEFAULT FALSE,          -- 是否啟用
+  ab_test_weight INTEGER DEFAULT 0,         -- 分流權重 (0-100)
+  ab_test_group VARCHAR(20),                -- 測試分組 (control, variant_a...)
+
+  -- 時間戳記
+  activated_at TIMESTAMPTZ,                 -- 啟用時間
+  deactivated_at TIMESTAMPTZ,               -- 停用時間
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- 說明為什麼需要 prompt_versions:
+-- - 記錄每個 Prompt 的歷史版本
+-- - 支援 A/B 測試 (同時運行多個版本比較效果)
+-- - 追蹤 Git 變更歷史
+-- - 可以快速回滾到舊版本
+
+-- -----------------------------------------------------
+-- 3.2 Prompt 執行記錄表 (prompt_executions)
+-- 說明: 記錄每次 Prompt 執行的詳細資訊,用於效果分析
+-- -----------------------------------------------------
+CREATE TABLE IF NOT EXISTS prompt_executions (
+  -- 主鍵
+  execution_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+
+  -- 關聯
+  version_id UUID REFERENCES prompt_versions(version_id) ON DELETE SET NULL,
+  task_execution_id UUID REFERENCES task_executions(execution_id) ON DELETE CASCADE,
+  user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+
+  -- Prompt 識別
+  category VARCHAR(100) NOT NULL,
+  name VARCHAR(100) NOT NULL,
+  version INTEGER NOT NULL,
+
+  -- 執行資訊
+  model VARCHAR(50) NOT NULL,               -- 實際使用的 model
+  temperature NUMERIC(3,2),                 -- 實際使用的 temperature
+
+  -- 輸入輸出
+  input_variables JSONB NOT NULL,           -- 輸入變數
+  rendered_prompt TEXT NOT NULL,            -- 渲染後的完整 prompt
+  ai_response TEXT,                         -- AI 回應 (原始文字)
+  ai_response_json JSONB,                   -- AI 回應 (解析後的 JSON)
+
+  -- 成本與效能
+  prompt_tokens INTEGER,                    -- Prompt token 數
+  completion_tokens INTEGER,                -- Completion token 數
+  total_tokens INTEGER,                     -- 總 token 數
+  cost NUMERIC(10,6),                       -- 成本 (USD)
+  duration_ms INTEGER,                      -- 執行時間 (毫秒)
+
+  -- 狀態
+  status VARCHAR(20) DEFAULT 'completed',   -- completed, failed, timeout
+  error_message TEXT,                       -- 錯誤訊息 (如果失敗)
+
+  -- A/B 測試分組
+  ab_test_group VARCHAR(20),                -- 這次執行屬於哪個測試組
+
+  -- 品質評分 (可選,可由人工或自動評估)
+  quality_score NUMERIC(3,2),               -- 品質分數 (0.00-1.00)
+  quality_metrics JSONB,                    -- 詳細品質指標
+
+  -- 時間戳記
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+  -- 約束
+  CONSTRAINT prompt_executions_status_check CHECK (status IN ('completed', 'failed', 'timeout'))
+);
+
+-- 說明為什麼需要 prompt_executions:
+-- - 記錄每次 Prompt 執行的完整資訊
+-- - 分析不同版本的成本、效能、品質
+-- - 支援 A/B 測試效果比較
+-- - 可以重現任何一次執行 (debug 時很有用)
 ```
 
 ---
@@ -785,6 +895,34 @@ CREATE INDEX idx_system_logs_user_timestamp ON system_logs(user_id, timestamp DE
 -- JSONB 欄位索引
 CREATE INDEX idx_system_logs_service ON system_logs(service);
 CREATE INDEX idx_system_logs_step_name ON system_logs(step_name);
+
+-- -----------------------------------------------------
+-- 3.11 prompt_versions 表索引
+-- -----------------------------------------------------
+CREATE UNIQUE INDEX idx_prompt_versions_unique ON prompt_versions(category, name, version);
+CREATE INDEX idx_prompt_versions_active ON prompt_versions(category, name, is_active);
+CREATE INDEX idx_prompt_versions_git ON prompt_versions(git_commit_hash);
+
+-- 說明為什麼需要這些索引:
+-- - unique index: 確保同一個 (category, name, version) 組合唯一
+-- - active index: 快速查詢啟用的版本 (A/B 測試選擇版本時使用)
+-- - git index: 根據 commit hash 查詢版本
+
+-- -----------------------------------------------------
+-- 3.12 prompt_executions 表索引
+-- -----------------------------------------------------
+CREATE INDEX idx_prompt_executions_version ON prompt_executions(version_id);
+CREATE INDEX idx_prompt_executions_task ON prompt_executions(task_execution_id);
+CREATE INDEX idx_prompt_executions_user ON prompt_executions(user_id);
+CREATE INDEX idx_prompt_executions_prompt ON prompt_executions(category, name, created_at DESC);
+CREATE INDEX idx_prompt_executions_ab_test ON prompt_executions(category, name, ab_test_group, created_at DESC);
+
+-- 說明為什麼需要這些索引:
+-- - version: 查詢特定版本的所有執行記錄
+-- - task: 查詢任務相關的 Prompt 執行
+-- - user: 查詢特定用戶的執行記錄
+-- - prompt: 查詢特定 Prompt 的歷史執行 (按時間排序)
+-- - ab_test: A/B 測試分析時按分組查詢 (效能分析的關鍵索引)
 ```
 
 ---
@@ -818,6 +956,8 @@ ALTER TABLE task_executions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE cost_records ENABLE ROW LEVEL SECURITY;
 ALTER TABLE performance_records ENABLE ROW LEVEL SECURITY;
 ALTER TABLE system_logs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE prompt_versions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE prompt_executions ENABLE ROW LEVEL SECURITY;
 
 -- -----------------------------------------------------
 -- 4.2 建立 RLS 政策
@@ -883,6 +1023,23 @@ CREATE POLICY system_logs_user_policy ON system_logs
   FOR ALL
   USING (auth.uid() = user_id);
 
+-- prompt_versions: 允許所有用戶讀取 (因為 Prompt 是共用的)
+-- 但只有管理員可以寫入 (透過應用層控制)
+CREATE POLICY prompt_versions_read_policy ON prompt_versions
+  FOR SELECT
+  USING (true);  -- 所有人都可以讀取
+
+-- prompt_executions: 用戶只能看到自己的執行記錄
+-- 管理員可以看到所有記錄 (透過應用層控制)
+CREATE POLICY prompt_executions_user_policy ON prompt_executions
+  FOR ALL
+  USING (auth.uid() = user_id);
+
+-- 說明 prompt_versions 的政策:
+-- - Prompt 版本是全系統共用的,所有用戶都應該能讀取
+-- - 寫入權限透過應用層的管理員權限控制
+-- - 這樣可以讓所有用戶看到 Prompt 歷史,但只有管理員能修改
+
 -- 說明 auth.uid():
 -- - Supabase 提供的函數,回傳目前登入用戶的 ID
 -- - 自動從 JWT token 中取得
@@ -943,6 +1100,12 @@ CREATE TRIGGER update_voiceovers_updated_at
 -- timelines
 CREATE TRIGGER update_timelines_updated_at
   BEFORE UPDATE ON timelines
+  FOR EACH ROW
+  EXECUTE FUNCTION update_updated_at_column();
+
+-- prompt_versions
+CREATE TRIGGER update_prompt_versions_updated_at
+  BEFORE UPDATE ON prompt_versions
   FOR EACH ROW
   EXECUTE FUNCTION update_updated_at_column();
 
@@ -1031,6 +1194,8 @@ ORDER BY table_name;
 -- - cost_records
 -- - generated_videos
 -- - performance_records
+-- - prompt_executions
+-- - prompt_versions
 -- - segment_tags
 -- - segments
 -- - system_logs
@@ -1210,6 +1375,7 @@ npm test -- tests/phase-1/task-1.1.e2e.test.ts
 ### 資料表
 - [ ] 7 張業務資料表已建立
 - [ ] 4 張系統資料表已建立
+- [ ] 2 張 Prompt 管理表已建立
 - [ ] 所有欄位型別正確
 - [ ] 所有約束 (CHECK, FOREIGN KEY) 正確
 
