@@ -1084,29 +1084,29 @@ npm test -- task-0.1-full-flow.test.ts
 完成這個 Task 後,請確認以下項目:
 
 ### 檔案結構
-- [ ] `package.json` 已建立且包含正確的 scripts
-- [ ] `tsconfig.json` 已建立
-- [ ] `jest.config.js` 已建立
-- [ ] `tests/utils/types.ts` 已建立
-- [ ] `tests/utils/test-runner.ts` 已建立
-- [ ] `tests/utils/report-generator.ts` 已建立
-- [ ] `tests/acceptance/basic/run.ts` 已建立
-- [ ] `tests/acceptance/basic/task-0.1-verification.test.ts` 已建立
-- [ ] `tests/acceptance/feature/task-0.1-runner.test.ts` 已建立
-- [ ] `tests/acceptance/e2e/task-0.1-full-flow.test.ts` 已建立
-- [ ] 測試資料夾結構完整
+- [x] `package.json` 已建立且包含正確的 scripts
+- [x] `tsconfig.json` 已建立
+- [x] `jest.config.js` 已建立
+- [x] `tests/utils/types.ts` 已建立
+- [x] `tests/utils/test-runner.ts` 已建立
+- [x] `tests/utils/report-generator.ts` 已建立
+- [x] `tests/acceptance/basic/run.ts` 已建立
+- [x] `tests/acceptance/basic/task-0.1-verification.test.ts` 已建立
+- [x] `tests/acceptance/feature/task-0.1-runner.test.ts` 已建立
+- [x] `tests/acceptance/e2e/task-0.1-full-flow.test.ts` 已建立
+- [x] 測試資料夾結構完整
 
 ### 功能驗證
-- [ ] `npm run verify:basic` 可以執行
-- [ ] 測試報告會自動產生在 `test-data/results/latest/`
-- [ ] 報告包含 JSON 與文字兩種格式
-- [ ] TypeScript 編譯無錯誤 (`npx tsc --noEmit`)
+- [x] `npm run verify:basic` 可以執行
+- [x] 測試報告會自動產生在 `test-data/results/latest/`
+- [x] 報告包含 JSON 與文字兩種格式
+- [x] TypeScript 編譯無錯誤 (`npx tsc --noEmit`)
 
 ### 測試驗收
-- [ ] Basic Verification 測試通過 (4/4)
-- [ ] Functional Acceptance 測試通過 (5/5)
-- [ ] E2E Acceptance 測試通過 (3/3)
-- [ ] **總計: 12/12 測試通過**
+- [x] Basic Verification 測試通過 (4/4)
+- [x] Functional Acceptance 測試通過 (5/5)
+- [x] E2E Acceptance 測試通過 (3/3)
+- [x] **總計: 12/12 測試通過**
 
 ---
 
