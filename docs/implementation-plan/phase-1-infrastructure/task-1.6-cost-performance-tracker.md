@@ -724,9 +724,364 @@ export default getCostTracker
 
 ---
 
+#### Step 4: 成本預算告警機制
+
+根據 Overall Design (docs/overall-design/05-data-flow.md 第 1575 行) 的成本估算,建立預算告警系統。
+
+**目標成本** (來自設計文件):
+- 單支影片生成: NT$1.8 (約 $0.06 USD)
+
+建立 `src/services/cost-budget-alert.service.ts`:
+
+```typescript
+/**
+ * 成本預算告警服務
+ *
+ * 根據 Overall Design 的成本估算,監控實際成本是否超出預算
+ * 參考: docs/overall-design/05-data-flow.md
+ */
+
+import { getLogger } from './logger.service'
+
+/**
+ * 成本預算配置
+ *
+ * 根據設計文件的成本估算設定
+ */
+const COST_BUDGETS = {
+  video_generation: {
+    target: 0.06,   // 目標: $0.06 USD/支 (Overall Design 估算值)
+    warning: 0.10,  // 警告: $0.10 USD/支 (超出 67%)
+    critical: 0.50, // 嚴重: $0.50 USD/支 (超出 733%)
+  },
+  material_analysis: {
+    target: 0.01,   // 目標: $0.01 USD (素材分析)
+    warning: 0.02,  // 警告: $0.02 USD
+    critical: 0.05, // 嚴重: $0.05 USD
+  },
+  voiceover_processing: {
+    target: 0.02,   // 目標: $0.02 USD (語音處理)
+    warning: 0.04,  // 警告: $0.04 USD
+    critical: 0.10, // 嚴重: $0.10 USD
+  },
+  script_generation: {
+    target: 0.01,   // 目標: $0.01 USD (劇本生成)
+    warning: 0.02,  // 警告: $0.02 USD
+    critical: 0.05, // 嚴重: $0.05 USD
+  },
+} as const
+
+type BudgetLevel = 'info' | 'warning' | 'critical'
+
+/**
+ * 成本預算告警服務
+ */
+export class CostBudgetAlert {
+  private logger = getLogger()
+
+  /**
+   * 檢查成本是否超出預算
+   *
+   * @param executionId 任務執行 ID
+   * @param taskType 任務類型
+   * @param totalCost 實際總成本 (USD)
+   * @returns 告警等級
+   */
+  async checkCostBudget(
+    executionId: string,
+    taskType: string,
+    totalCost: number
+  ): Promise<BudgetLevel> {
+    const budget = COST_BUDGETS[taskType as keyof typeof COST_BUDGETS]
+
+    if (!budget) {
+      console.warn(`[CostBudgetAlert] Unknown task type: ${taskType}`)
+      return 'info'
+    }
+
+    let level: BudgetLevel = 'info'
+
+    // 判斷告警等級
+    if (totalCost > budget.critical) {
+      level = 'critical'
+    } else if (totalCost > budget.warning) {
+      level = 'warning'
+    }
+
+    // 記錄告警
+    if (level !== 'info') {
+      const overage = totalCost - budget.target
+      const percentageOver = ((totalCost / budget.target) - 1) * 100
+
+      await this.logger.log({
+        level: level === 'critical' ? 'ERROR' : 'WARN',
+        type: 'COST_ALERT',
+        execution_id: executionId,
+        data: {
+          task_type: taskType,
+          actual_cost: totalCost,
+          target_cost: budget.target,
+          threshold: level === 'critical' ? budget.critical : budget.warning,
+          overage: overage,
+          overage_percentage: percentageOver.toFixed(1) + '%',
+          alert_level: level,
+        },
+      })
+
+      // CRITICAL 等級發送通知
+      if (level === 'critical') {
+        await this.sendCriticalAlert({
+          executionId,
+          taskType,
+          actualCost: totalCost,
+          targetCost: budget.target,
+          overage,
+          percentageOver,
+        })
+      }
+    } else {
+      // 成本在預算內,記錄 INFO
+      await this.logger.log({
+        level: 'INFO',
+        type: 'COST_OK',
+        execution_id: executionId,
+        data: {
+          task_type: taskType,
+          actual_cost: totalCost,
+          target_cost: budget.target,
+          within_budget: true,
+        },
+      })
+    }
+
+    return level
+  }
+
+  /**
+   * 發送 Critical 等級告警
+   */
+  private async sendCriticalAlert(params: {
+    executionId: string
+    taskType: string
+    actualCost: number
+    targetCost: number
+    overage: number
+    percentageOver: number
+  }): Promise<void> {
+    console.error(`
+╔════════════════════════════════════════════════════════════╗
+║                    🚨 成本告警 (CRITICAL)                   ║
+╠════════════════════════════════════════════════════════════╣
+║ 任務類型: ${params.taskType.padEnd(43)} ║
+║ 執行 ID:  ${params.executionId.padEnd(43)} ║
+║ 實際成本: $${params.actualCost.toFixed(4).padEnd(42)} ║
+║ 目標成本: $${params.targetCost.toFixed(4).padEnd(42)} ║
+║ 超出金額: $${params.overage.toFixed(4).padEnd(42)} ║
+║ 超出比例: ${params.percentageOver.toFixed(1)}%${('').padEnd(42 - params.percentageOver.toFixed(1).length - 1)} ║
+╚════════════════════════════════════════════════════════════╝
+    `)
+
+    // TODO: 整合通知系統 (Email, Slack, etc.)
+    // await notifyAdmin({
+    //   subject: `成本告警: ${params.taskType} 超出預算 ${params.percentageOver.toFixed(1)}%`,
+    //   message: `執行 ${params.executionId} 的實際成本 $${params.actualCost.toFixed(4)} 超出目標 $${params.targetCost.toFixed(4)}`,
+    //   priority: 'high',
+    // })
+  }
+
+  /**
+   * 取得所有預算配置
+   */
+  getBudgets() {
+    return COST_BUDGETS
+  }
+
+  /**
+   * 取得特定任務的預算
+   */
+  getTaskBudget(taskType: string) {
+    return COST_BUDGETS[taskType as keyof typeof COST_BUDGETS] || null
+  }
+}
+
+/**
+ * 建立成本預算告警服務單例
+ */
+let costBudgetAlert: CostBudgetAlert | null = null
+
+export function getCostBudgetAlert(): CostBudgetAlert {
+  if (!costBudgetAlert) {
+    costBudgetAlert = new CostBudgetAlert()
+  }
+  return costBudgetAlert
+}
+
+export default getCostBudgetAlert
+```
+
+**整合到 CostTracker**:
+
+修改 `src/services/cost-tracker.service.ts`,在記錄成本後自動檢查預算:
+
+```typescript
+import { getCostBudgetAlert } from './cost-budget-alert.service'
+
+export class CostTracker {
+  private costBudgetAlert = getCostBudgetAlert()
+
+  /**
+   * 檢查任務總成本並觸發告警 (新增)
+   */
+  async checkExecutionCost(
+    executionId: string,
+    taskType: string
+  ): Promise<void> {
+    // 計算該 execution_id 的總成本
+    const result = await db.cost_records.aggregate({
+      where: { execution_id: executionId },
+      _sum: { total_cost: true },
+    })
+
+    const totalCost = result._sum.total_cost || 0
+
+    // 檢查是否超出預算
+    await this.costBudgetAlert.checkCostBudget(
+      executionId,
+      taskType,
+      totalCost
+    )
+  }
+
+  // ... 其他方法保持不變
+}
+```
+
+**API 端點**:
+
+在 `src/controllers/admin/analytics.controller.ts` 中加入預算查詢 API:
+
+```typescript
+/**
+ * 查詢成本預算配置
+ *
+ * GET /api/admin/analytics/budgets
+ */
+export async function getBudgets(
+  req: Request,
+  res: Response
+): Promise<void> {
+  const costBudgetAlert = getCostBudgetAlert()
+  const budgets = costBudgetAlert.getBudgets()
+
+  res.json({
+    budgets,
+    note: '成本預算來自 Overall Design 估算值 (docs/overall-design/05-data-flow.md)',
+  })
+}
+
+/**
+ * 查詢任務的預算對比
+ *
+ * GET /api/admin/analytics/budget-comparison?taskType=video_generation&period=7d
+ */
+export async function getBudgetComparison(
+  req: Request,
+  res: Response
+): Promise<void> {
+  try {
+    const { taskType, period = '7d' } = req.query
+
+    if (!taskType) {
+      res.status(400).json({ error: 'taskType is required' })
+      return
+    }
+
+    const costBudgetAlert = getCostBudgetAlert()
+    const budget = costBudgetAlert.getTaskBudget(taskType as string)
+
+    if (!budget) {
+      res.status(404).json({ error: 'Unknown task type' })
+      return
+    }
+
+    // 計算時間範圍
+    const days = period === '24h' ? 1 : parseInt(period as string)
+    const startDate = new Date()
+    startDate.setDate(startDate.getDate() - days)
+
+    // 查詢該任務類型的實際成本
+    const costRecords = await db.cost_records.findMany({
+      where: {
+        created_at: { gte: startDate },
+        metadata: {
+          path: ['task_type'],
+          equals: taskType,
+        },
+      },
+      select: {
+        execution_id: true,
+        total_cost: true,
+        created_at: true,
+      },
+    })
+
+    // 按 execution_id 分組計算
+    const executionCosts = new Map<string, number>()
+    costRecords.forEach(record => {
+      const current = executionCosts.get(record.execution_id) || 0
+      executionCosts.set(record.execution_id, current + record.total_cost)
+    })
+
+    // 統計
+    const costs = Array.from(executionCosts.values())
+    const avgCost = costs.length > 0
+      ? costs.reduce((sum, c) => sum + c, 0) / costs.length
+      : 0
+
+    const overBudgetCount = costs.filter(c => c > budget.target).length
+    const warningCount = costs.filter(c => c > budget.warning && c <= budget.critical).length
+    const criticalCount = costs.filter(c => c > budget.critical).length
+
+    res.json({
+      taskType,
+      period,
+      budget: {
+        target: budget.target,
+        warning: budget.warning,
+        critical: budget.critical,
+      },
+      actual: {
+        totalExecutions: costs.length,
+        avgCost,
+        minCost: costs.length > 0 ? Math.min(...costs) : 0,
+        maxCost: costs.length > 0 ? Math.max(...costs) : 0,
+      },
+      alerts: {
+        overBudgetCount,
+        warningCount,
+        criticalCount,
+        withinBudgetCount: costs.length - overBudgetCount,
+      },
+      compliance: {
+        withinBudgetRate: costs.length > 0
+          ? ((costs.length - overBudgetCount) / costs.length * 100).toFixed(1) + '%'
+          : 'N/A',
+      },
+    })
+  } catch (error: any) {
+    res.status(500).json({
+      error: 'Failed to fetch budget comparison',
+      message: error.message,
+    })
+  }
+}
+```
+
+---
+
 ### Part 2: 效能追蹤 (PerformanceTracker)
 
-#### Step 4: 實作 PerformanceTracker 服務
+#### Step 5: 實作 PerformanceTracker 服務
 
 建立 `src/services/performance-tracker.service.ts`:
 
@@ -978,7 +1333,7 @@ export default getPerformanceTracker
 
 ---
 
-#### Step 5: 整合到 TaskLogger
+#### Step 6: 整合到 TaskLogger
 
 修改 `src/services/task-logger.service.ts`,加入效能追蹤:
 
@@ -1081,7 +1436,7 @@ export class StepLogger {
 
 ---
 
-#### Step 6: 實作效能分析 API
+#### Step 7: 實作效能分析 API
 
 建立 `src/controllers/admin/performance.controller.ts`:
 
@@ -1254,7 +1609,7 @@ export async function getSlowExecutions(
 
 ---
 
-#### Step 7: 整合成本與效能分析 API
+#### Step 8: 整合成本與效能分析 API
 
 建立 `src/controllers/admin/analytics.controller.ts`:
 
@@ -1446,6 +1801,34 @@ describe('Task 1.6 - Functional: Trackers', () => {
 
     expect(Array.isArray(bottlenecks)).toBe(true)
   })
+
+  it('應該能檢查成本預算並發出告警', async () => {
+    const costBudgetAlert = getCostBudgetAlert()
+
+    // 測試成本在預算內
+    let level = await costBudgetAlert.checkCostBudget(
+      testExecutionId,
+      'video_generation',
+      0.05  // $0.05 < target $0.06
+    )
+    expect(level).toBe('info')
+
+    // 測試成本超出 warning
+    level = await costBudgetAlert.checkCostBudget(
+      testExecutionId + '_warn',
+      'video_generation',
+      0.15  // $0.15 > warning $0.10
+    )
+    expect(level).toBe('warning')
+
+    // 測試成本超出 critical
+    level = await costBudgetAlert.checkCostBudget(
+      testExecutionId + '_critical',
+      'video_generation',
+      0.60  // $0.60 > critical $0.50
+    )
+    expect(level).toBe('critical')
+  })
 })
 ```
 
@@ -1479,6 +1862,27 @@ describe('Task 1.6 - E2E: Analytics API', () => {
     expect(response.body.bottlenecks).toBeDefined()
     expect(response.body.recommendations).toBeDefined()
   })
+
+  it('應該能查詢成本預算配置', async () => {
+    const response = await request(app)
+      .get('/api/admin/analytics/budgets')
+      .expect(200)
+
+    expect(response.body.budgets).toBeDefined()
+    expect(response.body.budgets.video_generation).toBeDefined()
+    expect(response.body.budgets.video_generation.target).toBe(0.06)
+  })
+
+  it('應該能查詢預算對比', async () => {
+    const response = await request(app)
+      .get('/api/admin/analytics/budget-comparison?taskType=video_generation&period=7d')
+      .expect(200)
+
+    expect(response.body.budget).toBeDefined()
+    expect(response.body.actual).toBeDefined()
+    expect(response.body.alerts).toBeDefined()
+    expect(response.body.compliance).toBeDefined()
+  })
 })
 ```
 
@@ -1492,6 +1896,7 @@ describe('Task 1.6 - E2E: Analytics API', () => {
 - [ ] API 定價配置 (`src/config/api-pricing.ts`)
 - [ ] 成本計算服務 (`src/services/cost-calculator.service.ts`)
 - [ ] CostTracker 服務 (`src/services/cost-tracker.service.ts`)
+- [ ] 成本預算告警服務 (`src/services/cost-budget-alert.service.ts`)
 
 **效能追蹤**:
 - [ ] PerformanceTracker 服務 (`src/services/performance-tracker.service.ts`)
@@ -1500,6 +1905,7 @@ describe('Task 1.6 - E2E: Analytics API', () => {
 
 **綜合分析**:
 - [ ] 綜合分析 API (`src/controllers/admin/analytics.controller.ts`)
+- [ ] 成本預算查詢 API (getBudgets, getBudgetComparison)
 
 ### 測試檔案
 - [ ] `tests/phase-1/task-1.6.basic.test.ts` 已建立
@@ -1508,8 +1914,16 @@ describe('Task 1.6 - E2E: Analytics API', () => {
 
 ### 驗收測試
 - [ ] Basic 測試全部通過
-- [ ] Functional 測試全部通過
-- [ ] E2E 測試全部通過
+- [ ] Functional 測試全部通過 (含成本預算告警測試)
+- [ ] E2E 測試全部通過 (含預算 API 測試)
+
+### 成本預算告警功能驗收
+- [ ] 成本預算閾值已根據 Overall Design 設定
+- [ ] 成本超出 warning 閾值會記錄 WARN log
+- [ ] 成本超出 critical 閾值會記錄 ERROR log 並顯示告警
+- [ ] 可透過 API 查詢預算配置
+- [ ] 可透過 API 查看成本 vs 預算對比
+- [ ] Dashboard 能顯示預算遵守率 (compliance rate)
 
 ---
 
@@ -1553,12 +1967,71 @@ CREATE INDEX idx_performance_records_task_type
 
 ---
 
+### Q4: 成本告警沒有觸發
+
+**原因**: 未呼叫 `CostTracker.checkExecutionCost()`
+
+**解決方案**:
+```typescript
+// 在任務完成後檢查總成本
+const costTracker = getCostTracker()
+await costTracker.checkExecutionCost(executionId, 'video_generation')
+```
+
+確保在每個任務執行結束時呼叫此方法。
+
+---
+
+### Q5: 預算閾值需要調整
+
+**原因**: API 定價變動或實際成本與估算不符
+
+**解決方案**:
+1. 修改 `src/services/cost-budget-alert.service.ts` 中的 `COST_BUDGETS`
+2. 參考最新的 API 定價
+3. 根據實際執行數據調整閾值
+4. 重新部署服務
+
+```typescript
+const COST_BUDGETS = {
+  video_generation: {
+    target: 0.08,   // 調整目標值
+    warning: 0.12,  // 調整警告值
+    critical: 0.50,
+  },
+  // ...
+}
+```
+
+---
+
+### Q6: 如何查看預算遵守率
+
+**原因**: 需要監控成本是否在預算內
+
+**解決方案**:
+```bash
+# 使用 API 查詢預算對比
+curl "http://localhost:3000/api/admin/analytics/budget-comparison?taskType=video_generation&period=7d"
+
+# 查看回傳的 compliance.withinBudgetRate
+{
+  "compliance": {
+    "withinBudgetRate": "85.2%"  // 85.2% 的任務在預算內
+  }
+}
+```
+
+---
+
 ## ✨ Task 完成確認
 
 完成這個 Task 後,你應該能夠:
 
 ✅ 追蹤所有 AI API 使用量與成本
 ✅ 計算每次呼叫的精確成本
+✅ 監控成本是否超出預算並發出告警
+✅ 對比實際成本與 Overall Design 的估算值
 ✅ 記錄每個步驟的執行時間
 ✅ 找出效能瓶頸與慢查詢
 ✅ 查詢成本與效能統計
@@ -1568,7 +2041,10 @@ CREATE INDEX idx_performance_records_task_type
 
 ---
 
-**文件版本**: 2.0
-**狀態**: ✅ 已完成 (整合 PerformanceTracker)
+**文件版本**: 2.1
+**狀態**: ✅ 已完成 (新增成本預算告警機制)
 **最後更新**: 2025-10-07
 **維護者**: CheapCut 開發團隊
+**變更記錄**:
+- v2.1: 新增成本預算告警機制,對比 Overall Design 估算值 (2025-10-07)
+- v2.0: 整合 PerformanceTracker (2025-10-07)
