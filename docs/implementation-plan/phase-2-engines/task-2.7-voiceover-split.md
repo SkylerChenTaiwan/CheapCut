@@ -980,6 +980,125 @@ npm test -- tests/phase-2/task-2.7.e2e.test.ts
 
 ---
 
+## 📊 Logging 與錯誤處理整合
+
+> 參考: [LOGGING-STANDARDS.md](../LOGGING-STANDARDS.md)
+
+### 必須記錄的事件
+
+#### 基礎事件
+- [ ] `task_started` - 任務開始
+- [ ] `task_step_started` - 開始配音切分
+- [ ] `task_step_completed` - 切分完成
+- [ ] `task_completed` - 任務完成
+- [ ] `task_failed` - 任務失敗
+
+#### AI 呼叫事件 (透過 PromptManager)
+- [ ] `ai_call_started`, `ai_call_completed`, `ai_call_failed`
+- [ ] `ai_response_validation_failed` - Schema 或時間軸驗證失敗
+
+### 整合程式碼範例
+
+```typescript
+import { validateVoiceoverTiming } from '@/services/validators/data-flow.validator'
+
+class VoiceoverSplitEngine {
+  async split(voiceoverId: string, userId: string) {
+    const taskLogger = createTaskLogger('voiceover_split', userId)
+    const executionId = taskLogger.getExecutionId()
+    const validator = new DataFlowValidator(taskLogger.getLogger())
+    const callId = uuid()
+
+    try {
+      const voiceover = await db.voiceovers.findOne({ voiceoverId })
+
+      await taskLogger.taskStarted(
+        {
+          voiceoverId,
+          transcript_length: voiceover.transcript.length,
+          duration: voiceover.duration
+        },
+        ['ai_split', 'validate_timing', 'save_segments']
+      )
+
+      // Step 1: AI 切分
+      await taskLogger.stepStarted(0, 'ai_split')
+
+      const { response, cost } = await promptManager.executePrompt(
+        'voiceover-processing',
+        'voiceover-split',
+        {
+          transcript: voiceover.transcript,
+          duration: voiceover.duration
+        },
+        { executionId, userId, callId }
+      )
+
+      // ✅ 驗證 Schema
+      await validator.validateAIResponse(
+        callId,
+        'voiceover_split',  // 在 schemas.ts 中已定義
+        response
+      )
+
+      await taskLogger.stepCompleted(0, 'ai_split', {
+        segments_count: response.segments.length
+      })
+
+      // Step 2: 驗證時間軸一致性 ✅ 關鍵驗證！
+      await taskLogger.stepStarted(1, 'validate_timing')
+
+      await validateVoiceoverTiming(
+        response.segments,
+        voiceover.duration,
+        taskLogger.getLogger()
+      )
+
+      await taskLogger.stepCompleted(1, 'validate_timing')
+
+      // Step 3: 儲存片段
+      await taskLogger.stepStarted(2, 'save_segments')
+      // ... 儲存邏輯 ...
+      await taskLogger.stepCompleted(2, 'save_segments')
+
+      await taskLogger.taskCompleted(
+        { segments_created: response.segments.length },
+        cost
+      )
+
+      return response.segments
+
+    } catch (error) {
+      await taskLogger.taskFailed('ai_split', error, {
+        voiceoverId,
+        duration: voiceover?.duration
+      })
+      throw error  // ✅ Fail Fast
+    }
+  }
+}
+```
+
+### 必須驗證的資料
+
+根據 `schemas.ts`:
+- [x] `segments`: array (min 1)
+- [x] 每個 segment: `{ start: number, end: number, text: string, keywords: string[] }`
+
+**時間軸一致性** (使用 `validateVoiceoverTiming`):
+- [x] start < end
+- [x] 無縫隙 (segment[i].end == segment[i+1].start)
+- [x] 無重疊
+- [x] 不超過總長度
+
+### Fail Fast 檢查清單
+
+- [x] ✅ Schema 驗證失敗時立即 throw error
+- [x] ✅ 時間軸驗證失敗時立即 throw error (不嘗試修復)
+- [x] ✅ 記錄詳細的時間軸錯誤 (哪個 segment 有問題)
+
+---
+
 ## 🐛 常見問題與解決方案
 
 ### 常見錯誤類型速查表

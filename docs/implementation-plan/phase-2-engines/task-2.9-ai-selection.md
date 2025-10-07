@@ -1175,6 +1175,151 @@ npm test -- tests/phase-2/task-2.9.e2e.test.ts
 
 ---
 
+## 📊 Logging 與錯誤處理整合
+
+> 參考: [LOGGING-STANDARDS.md](../LOGGING-STANDARDS.md)
+
+### 必須記錄的事件
+
+#### 基礎事件
+- [ ] `task_started` - 任務開始
+- [ ] `task_step_started` - 為每個配音片段選片
+- [ ] `task_step_completed` - 選片完成
+- [ ] `task_completed` - 所有選片完成
+- [ ] `task_failed` - 任務失敗
+
+#### AI 呼叫事件 (每個配音片段都要記錄一次)
+- [ ] `ai_call_started` - Gemini 選片開始
+- [ ] `ai_call_completed` - 選片成功
+- [ ] `ai_call_failed` - Gemini 失敗
+- [ ] `ai_response_validation_failed` - Schema 或參照驗證失敗
+
+### 整合程式碼範例
+
+```typescript
+class AISelectionEngine {
+  async selectClips(voiceoverSegments: any[], userId: string) {
+    const taskLogger = createTaskLogger('ai_selection', userId)
+    const executionId = taskLogger.getExecutionId()
+    const validator = new DataFlowValidator(taskLogger.getLogger())
+
+    try {
+      await taskLogger.taskStarted(
+        { segments_count: voiceoverSegments.length },
+        ['query_candidates', ...voiceoverSegments.map((_, i) => `select_segment_${i}`)]
+      )
+
+      const selections = []
+      let totalCost = 0
+
+      // 為每個配音片段選片
+      for (let i = 0; i < voiceoverSegments.length; i++) {
+        const segment = voiceoverSegments[i]
+
+        await taskLogger.stepStarted(i + 1, `select_segment_${i}`)
+
+        // 查詢候選片段
+        const candidates = await this.queryCandidates(segment)
+
+        if (candidates.length === 0) {
+          await taskLogger.getLogger().error('data_flow_validation_failed', {
+            validation_error: 'EmptyQueryResult',
+            error_message: `No candidates for voice segment ${i}`,
+            error_details: {
+              voice_text: segment.text,
+              keywords: segment.keywords
+            }
+          })
+          throw new ValidationError(`No candidates for segment ${i}`)
+        }
+
+        // AI 選片
+        const callId = uuid()
+        const { response, cost } = await promptManager.executePrompt(
+          'video-selection',
+          'segment-select',
+          {
+            voiceText: segment.text,
+            duration: segment.end - segment.start,
+            keywords: segment.keywords,
+            candidates: candidates.map(c => ({
+              id: c.segment_id,
+              description: c.description,
+              duration: c.duration
+            }))
+          },
+          { executionId, userId, callId }
+        )
+
+        // ✅ 驗證 Schema
+        await validator.validateAIResponse(
+          callId,
+          'segment_selection',  // 在 schemas.ts 中已定義
+          response
+        )
+
+        // ✅ 驗證參照完整性 (selectedSegmentId 必須在候選列表中)
+        const candidateIds = candidates.map(c => c.segment_id)
+        await validator.validateReference(
+          response.selectedSegmentId,
+          candidateIds,
+          { voiceSegmentIndex: i, voiceText: segment.text }
+        )
+
+        // ✅ 驗證數值範圍 (trimEnd <= segment.duration)
+        const selectedSegment = candidates.find(c => c.segment_id === response.selectedSegmentId)
+        await validator.validateRange(
+          response.trimEnd,
+          'trimEnd',
+          response.trimStart,  // min
+          selectedSegment.duration,  // max
+          { selectedSegmentId: response.selectedSegmentId }
+        )
+
+        await taskLogger.stepCompleted(i + 1, `select_segment_${i}`, {
+          selected_id: response.selectedSegmentId,
+          trim: `${response.trimStart}-${response.trimEnd}`
+        })
+
+        selections.push(response)
+        totalCost += cost
+      }
+
+      await taskLogger.taskCompleted(
+        { selections_count: selections.length },
+        totalCost
+      )
+
+      return selections
+
+    } catch (error) {
+      await taskLogger.taskFailed(`select_segment`, error)
+      throw error  // ✅ Fail Fast
+    }
+  }
+}
+```
+
+### 必須驗證的資料
+
+根據 `schemas.ts`:
+- [x] `selectedSegmentId`: string (required)
+- [x] `trimStart`: number >= 0
+- [x] `trimEnd`: number >= trimStart
+
+**額外驗證**:
+- [x] selectedSegmentId 在候選列表中 (使用 `validateReference`)
+- [x] trimEnd <= segment.duration (使用 `validateRange`)
+
+### Fail Fast 檢查清單
+
+- [x] ✅ 候選片段為空時立即 throw error (不嘗試放寬條件)
+- [x] ✅ AI 選了不存在的片段時立即 throw error
+- [x] ✅ trim 範圍錯誤時立即 throw error
+- [x] ✅ 記錄完整的選片上下文 (候選列表、AI 回應、錯誤)
+
+---
+
 ## 🐛 常見問題與解決方案
 
 ### 常見錯誤類型速查表
