@@ -1058,6 +1058,548 @@ export async function getServiceFailureRate(
 
 ---
 
+### Step 6: 實作資料驗證框架
+
+建立 `src/services/validators/schemas.ts`:
+
+```typescript
+/**
+ * 資料驗證 Schema 定義
+ *
+ * 根據 Overall Design 08-logging-monitoring.md 的資料流驗證需求
+ */
+
+import Joi from 'joi'
+
+/**
+ * 所有驗證 Schema
+ */
+export const SCHEMAS = {
+  // ==================== AI 回應 Schema ====================
+
+  /**
+   * 語意分析結果 (Task 2.6)
+   */
+  semantic_analysis: Joi.object({
+    topics: Joi.array().items(Joi.string()).min(1).required(),
+    keywords: Joi.array().items(Joi.string()).min(1).max(20).required(),
+    tone: Joi.string().valid('professional', 'casual', 'enthusiastic').required()
+  }),
+
+  /**
+   * 配音切分結果 (Task 2.7)
+   */
+  voiceover_split: Joi.object({
+    segments: Joi.array().items(
+      Joi.object({
+        start: Joi.number().min(0).required(),
+        end: Joi.number().min(0).required(),
+        text: Joi.string().required(),
+        keywords: Joi.array().items(Joi.string()).required()
+      })
+    ).min(1).required()
+  }),
+
+  /**
+   * AI 選片結果 (Task 2.9)
+   */
+  segment_selection: Joi.object({
+    selectedSegmentId: Joi.string().required(),
+    trimStart: Joi.number().min(0).required(),
+    trimEnd: Joi.number().min(0).required(),
+    reason: Joi.string().optional()
+  }),
+
+  /**
+   * 時間軸 JSON (Task 2.10)
+   */
+  timeline: Joi.object({
+    timeline_id: Joi.string().required(),
+    voiceover_url: Joi.string().uri().required(),
+    total_duration: Joi.number().min(0).required(),
+    segments: Joi.array().items(
+      Joi.object({
+        index: Joi.number().min(0).required(),
+        start_time: Joi.number().min(0).required(),
+        end_time: Joi.number().min(0).required(),
+        video_segment_id: Joi.string().required(),
+        video_trim_start: Joi.number().min(0).required(),
+        video_trim_end: Joi.number().min(0).required()
+      })
+    ).min(1).required()
+  }),
+
+  // ==================== 可以繼續加入其他 Schema ====================
+}
+
+/**
+ * 驗證錯誤類型
+ */
+export type ValidationType =
+  | 'MissingRequiredField'
+  | 'InvalidFieldType'
+  | 'InvalidValueRange'
+  | 'SchemaValidationError'
+  | 'InvalidReference'
+  | 'FileNotFound'
+  | 'InvalidFileSize'
+  | 'EmptyQueryResult'
+  | 'IncompleteQueryResult'
+  | 'InvalidSegmentTiming'
+  | 'InvalidTimelineStructure'
+  | 'BusinessLogicViolation'
+
+/**
+ * 驗證錯誤
+ */
+export class ValidationError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'ValidationError'
+  }
+}
+```
+
+---
+
+建立 `src/services/validators/data-flow.validator.ts`:
+
+```typescript
+/**
+ * 資料流驗證器
+ *
+ * 根據 Overall Design 08-logging-monitoring.md 的設計實作
+ */
+
+import { Logger } from '../logger.service'
+import { SCHEMAS, ValidationError } from './schemas'
+import type { Schema } from 'joi'
+
+/**
+ * 資料流驗證器
+ */
+export class DataFlowValidator {
+  private logger: Logger
+
+  constructor(logger: Logger) {
+    this.logger = logger
+  }
+
+  /**
+   * 驗證 AI 回應
+   *
+   * @param callId AI 呼叫 ID
+   * @param schemaName Schema 名稱
+   * @param data 要驗證的資料
+   * @param additionalChecks 額外的業務邏輯驗證函數
+   */
+  async validateAIResponse(
+    callId: string,
+    schemaName: string,
+    data: any,
+    additionalChecks?: (data: any) => Array<{ field: string; message: string; value?: any }>
+  ): Promise<void> {
+    const schema = SCHEMAS[schemaName as keyof typeof SCHEMAS]
+    if (!schema) {
+      throw new Error(`Schema ${schemaName} not found`)
+    }
+
+    // Step 1: Schema 驗證
+    const { error } = schema.validate(data, { abortEarly: false })
+
+    if (error) {
+      await this.logger.error('ai_response_validation_failed', {
+        call_id: callId,
+        validation_error: this.getValidationErrorType(error),
+        error_message: error.message,
+        error_details: {
+          validation_errors: error.details.map(d => ({
+            field: d.path.join('.'),
+            message: d.message,
+            type: d.type
+          })),
+          received_data: data,
+          expected_schema: this.getSchemaDescription(schemaName)
+        }
+      })
+
+      throw new ValidationError(`AI response validation failed: ${error.message}`)
+    }
+
+    // Step 2: 額外的業務邏輯驗證
+    if (additionalChecks) {
+      const errors = additionalChecks(data)
+      if (errors.length > 0) {
+        await this.logger.error('ai_response_validation_failed', {
+          call_id: callId,
+          validation_error: 'BusinessLogicViolation',
+          error_details: {
+            validation_errors: errors,
+            received_data: data
+          }
+        })
+
+        throw new ValidationError(`Business logic validation failed: ${errors.map(e => e.message).join(', ')}`)
+      }
+    }
+  }
+
+  /**
+   * 驗證資料流傳接
+   *
+   * @param fromModule 來源模組
+   * @param toModule 目標模組
+   * @param schemaName Schema 名稱
+   * @param data 資料
+   * @param context 上下文資訊
+   */
+  async validateDataFlow(
+    fromModule: string,
+    toModule: string,
+    schemaName: string,
+    data: any,
+    context?: any
+  ): Promise<void> {
+    const schema = SCHEMAS[schemaName as keyof typeof SCHEMAS]
+    if (!schema) {
+      throw new Error(`Schema ${schemaName} not found`)
+    }
+
+    const { error } = schema.validate(data, { abortEarly: false })
+
+    if (error) {
+      await this.logger.error('data_flow_validation_failed', {
+        validation_error: this.getValidationErrorType(error),
+        error_message: error.message,
+        error_details: {
+          from_module: fromModule,
+          to_module: toModule,
+          validation_errors: error.details.map(d => ({
+            field: d.path.join('.'),
+            message: d.message,
+            type: d.type
+          })),
+          received_data: data
+        },
+        context
+      })
+
+      throw new ValidationError(`Data flow validation failed: ${fromModule} → ${toModule}: ${error.message}`)
+    }
+  }
+
+  /**
+   * 驗證參照完整性
+   *
+   * 例如: AI 選的 segment_id 是否在候選列表中
+   *
+   * @param selectedId 選擇的 ID
+   * @param validIds 有效 ID 列表
+   * @param context 上下文資訊
+   */
+  async validateReference(
+    selectedId: string,
+    validIds: string[],
+    context: any
+  ): Promise<void> {
+    if (!validIds.includes(selectedId)) {
+      await this.logger.error('data_flow_validation_failed', {
+        validation_error: 'InvalidReference',
+        error_message: `Selected ID ${selectedId} not in valid list`,
+        error_details: {
+          invalid_id: selectedId,
+          valid_ids: validIds,
+          valid_count: validIds.length,
+          context
+        }
+      })
+
+      throw new ValidationError(`Invalid reference: ${selectedId} not in valid list of ${validIds.length} items`)
+    }
+  }
+
+  /**
+   * 驗證檔案是否可用
+   *
+   * @param filePath 檔案路徑
+   * @param constraints 約束條件
+   */
+  async validateFile(
+    filePath: string,
+    constraints?: {
+      minSize?: number
+      maxSize?: number
+      mustExist?: boolean
+    }
+  ): Promise<void> {
+    const fileInfo = await this.getFileInfo(filePath)
+
+    const errors: string[] = []
+
+    if (constraints?.mustExist && !fileInfo.exists) {
+      errors.push(`File does not exist: ${filePath}`)
+    }
+
+    if (fileInfo.exists && fileInfo.size === 0) {
+      errors.push(`File is empty: ${filePath}`)
+    }
+
+    if (constraints?.minSize && fileInfo.size < constraints.minSize) {
+      errors.push(`File too small: ${fileInfo.size} < ${constraints.minSize}`)
+    }
+
+    if (constraints?.maxSize && fileInfo.size > constraints.maxSize) {
+      errors.push(`File too large: ${fileInfo.size} > ${constraints.maxSize}`)
+    }
+
+    if (errors.length > 0) {
+      await this.logger.error('data_flow_validation_failed', {
+        validation_error: fileInfo.exists ? 'InvalidFileSize' : 'FileNotFound',
+        error_message: errors.join('; '),
+        error_details: {
+          file_path: filePath,
+          file_info: fileInfo,
+          constraints
+        }
+      })
+
+      throw new ValidationError(errors.join('; '))
+    }
+  }
+
+  /**
+   * 驗證數值範圍
+   *
+   * @param value 數值
+   * @param field 欄位名稱
+   * @param min 最小值
+   * @param max 最大值
+   * @param context 上下文資訊
+   */
+  async validateRange(
+    value: number,
+    field: string,
+    min?: number,
+    max?: number,
+    context?: any
+  ): Promise<void> {
+    const errors: string[] = []
+
+    if (min !== undefined && value < min) {
+      errors.push(`${field} is ${value}, must be >= ${min}`)
+    }
+
+    if (max !== undefined && value > max) {
+      errors.push(`${field} is ${value}, must be <= ${max}`)
+    }
+
+    if (errors.length > 0) {
+      await this.logger.error('data_flow_validation_failed', {
+        validation_error: 'InvalidValueRange',
+        error_message: errors.join('; '),
+        error_details: {
+          field,
+          value,
+          min,
+          max,
+          context
+        }
+      })
+
+      throw new ValidationError(errors.join('; '))
+    }
+  }
+
+  /**
+   * 取得驗證錯誤類型
+   */
+  private getValidationErrorType(error: any): string {
+    const firstError = error.details[0]
+    if (!firstError) return 'SchemaValidationError'
+
+    if (firstError.type.includes('required')) {
+      return 'MissingRequiredField'
+    }
+    if (firstError.type.includes('type')) {
+      return 'InvalidFieldType'
+    }
+    if (firstError.type.includes('min') || firstError.type.includes('max')) {
+      return 'InvalidValueRange'
+    }
+    return 'SchemaValidationError'
+  }
+
+  /**
+   * 取得 Schema 描述
+   */
+  private getSchemaDescription(schemaName: string): string {
+    // 簡化的 Schema 描述,實際可以更詳細
+    return `Schema: ${schemaName}`
+  }
+
+  /**
+   * 取得檔案資訊
+   */
+  private async getFileInfo(filePath: string): Promise<{
+    exists: boolean
+    size: number
+    path: string
+  }> {
+    // 根據路徑類型檢查檔案
+    if (filePath.startsWith('s3://') || filePath.startsWith('gs://')) {
+      return await this.checkCloudFile(filePath)
+    } else {
+      return await this.checkLocalFile(filePath)
+    }
+  }
+
+  /**
+   * 檢查雲端檔案 (S3/GCS)
+   */
+  private async checkCloudFile(filePath: string): Promise<{
+    exists: boolean
+    size: number
+    path: string
+  }> {
+    // TODO: 實作雲端檔案檢查
+    // 這裡先回傳簡單的結果
+    return {
+      exists: true,
+      size: 0,
+      path: filePath
+    }
+  }
+
+  /**
+   * 檢查本地檔案
+   */
+  private async checkLocalFile(filePath: string): Promise<{
+    exists: boolean
+    size: number
+    path: string
+  }> {
+    const fs = require('fs').promises
+    try {
+      const stats = await fs.stat(filePath)
+      return {
+        exists: true,
+        size: stats.size,
+        path: filePath
+      }
+    } catch (error) {
+      return {
+        exists: false,
+        size: 0,
+        path: filePath
+      }
+    }
+  }
+}
+
+/**
+ * 驗證時間軸一致性
+ *
+ * 檢查配音切分結果的時間軸是否正確:
+ * - 無縫隙 (每個片段的 end 等於下個片段的 start)
+ * - 無重疊
+ * - 不超過總長度
+ */
+export async function validateVoiceoverTiming(
+  segments: Array<{ start: number; end: number; text: string }>,
+  totalDuration: number,
+  logger: Logger
+): Promise<void> {
+  const errors: Array<{
+    segment_index: number
+    error: string
+    message: string
+    [key: string]: any
+  }> = []
+
+  for (let i = 0; i < segments.length; i++) {
+    const segment = segments[i]
+
+    // 檢查 start < end
+    if (segment.start >= segment.end) {
+      errors.push({
+        segment_index: i,
+        error: 'invalid_range',
+        message: `Segment ${i}: start (${segment.start}) >= end (${segment.end})`,
+        start: segment.start,
+        end: segment.end
+      })
+    }
+
+    // 檢查是否超過總長度
+    if (segment.end > totalDuration) {
+      errors.push({
+        segment_index: i,
+        error: 'exceeds_total_duration',
+        message: `Segment ${i}: end (${segment.end}) > total duration (${totalDuration})`,
+        segment_end: segment.end,
+        total_duration: totalDuration
+      })
+    }
+
+    // 檢查與下一個片段的關係
+    if (i < segments.length - 1) {
+      const nextSegment = segments[i + 1]
+
+      // 檢查縫隙
+      if (nextSegment.start > segment.end) {
+        const gap = nextSegment.start - segment.end
+        errors.push({
+          segment_index: i + 1,
+          error: 'gap_detected',
+          message: `Gap between segment ${i} and ${i + 1}`,
+          segment_end: segment.end,
+          next_segment_start: nextSegment.start,
+          gap_duration: gap
+        })
+      }
+
+      // 檢查重疊
+      if (nextSegment.start < segment.end) {
+        const overlap = segment.end - nextSegment.start
+        errors.push({
+          segment_index: i + 1,
+          error: 'overlap_detected',
+          message: `Segment ${i + 1} overlaps with segment ${i}`,
+          segment_end: segment.end,
+          next_segment_start: nextSegment.start,
+          overlap_duration: overlap
+        })
+      }
+    }
+  }
+
+  if (errors.length > 0) {
+    await logger.error('data_flow_validation_failed', {
+      validation_error: 'InvalidSegmentTiming',
+      error_message: 'Voice segment timing has gaps or overlaps',
+      error_details: {
+        validation_errors: errors,
+        total_duration: totalDuration,
+        segments_count: segments.length
+      }
+    })
+
+    throw new ValidationError(`Invalid voiceover timing: ${errors.length} errors found`)
+  }
+}
+```
+
+---
+
+### Step 7: 安裝驗證套件
+
+```bash
+npm install joi
+npm install --save-dev @types/joi
+```
+
+---
+
 ## ✅ 驗收標準
 
 ### Basic Verification (基礎驗證)
@@ -1319,7 +1861,10 @@ npm test -- tests/phase-1/task-1.5.e2e.test.ts
 - [ ] TaskLogger 服務 (`src/services/task-logger.service.ts`)
 - [ ] HTTP Logger Middleware (`src/middleware/logger.middleware.ts`)
 - [ ] Log 查詢 API (`src/controllers/admin/logs.controller.ts`)
+- [ ] **資料驗證框架** (`src/services/validators/schemas.ts`)
+- [ ] **DataFlowValidator** (`src/services/validators/data-flow.validator.ts`)
 - [ ] system_logs 表已建立 (Task 1.1)
+- [ ] 安裝 joi 套件
 
 ### 測試檔案
 - [ ] `tests/phase-1/task-1.5.basic.test.ts` 已建立
