@@ -1367,6 +1367,134 @@ curl http://localhost:8080/api/subtitles/SUBTITLE_ID/download \
 
 ---
 
+## 📊 Logging 與錯誤處理整合
+
+> 參考: [LOGGING-STANDARDS.md](../LOGGING-STANDARDS.md)
+
+### 必須記錄的事件
+
+#### 基礎事件
+- [ ] `task_started` - 任務開始
+- [ ] `task_step_started` - 開始 STT
+- [ ] `task_step_completed` - STT 完成
+- [ ] `task_completed` - 任務完成 (包含成本)
+- [ ] `task_failed` - 任務失敗
+
+#### AI 呼叫事件
+- [ ] `ai_call_started` - Whisper 呼叫開始
+- [ ] `ai_call_completed` - 轉錄成功 (包含時長、成本)
+- [ ] `ai_call_failed` - Whisper API 失敗
+
+### 整合程式碼範例
+
+```typescript
+class STTEngine {
+  async transcribe(voiceoverId: string, userId: string) {
+    const taskLogger = createTaskLogger('stt_transcription', userId)
+    const executionId = taskLogger.getExecutionId()
+    const validator = new DataFlowValidator(taskLogger.getLogger())
+
+    try {
+      const voiceover = await db.voiceovers.findOne({ voiceoverId })
+
+      await taskLogger.taskStarted(
+        {
+          voiceoverId,
+          duration: voiceover.duration,
+          filePath: voiceover.file_path
+        },
+        ['whisper_stt', 'save_transcript']
+      )
+
+      // Step 1: Whisper STT
+      await taskLogger.stepStarted(0, 'whisper_stt')
+
+      const aiLogger = taskLogger.createAILogger('openai_whisper', 'stt')
+
+      await aiLogger.callStarted({
+        file: voiceover.file_path,
+        language: 'zh',
+        duration: voiceover.duration
+      })
+
+      const startTime = Date.now()
+      const result = await openai.audio.transcriptions.create({
+        file: fs.createReadStream(voiceover.file_path),
+        model: 'whisper-1',
+        language: 'zh',
+        response_format: 'verbose_json'
+      })
+      const duration = Date.now() - startTime
+
+      // 計算成本 (按音檔分鐘數)
+      const cost = (voiceover.duration / 60) * 0.006
+
+      await aiLogger.callCompleted(
+        {
+          transcript_length: result.text.length,
+          segments_count: result.segments?.length || 0,
+          language: result.language
+        },
+        cost
+      )
+
+      // 驗證轉錄結果
+      if (!result.text || result.text.trim().length === 0) {
+        await taskLogger.getLogger().error('ai_response_validation_failed', {
+          validation_error: 'EmptyTranscript',
+          error_message: 'Whisper returned empty transcript',
+          voiceover_id: voiceoverId,
+          audio_duration: voiceover.duration
+        })
+        throw new ValidationError('Empty transcript from Whisper')
+      }
+
+      await taskLogger.stepCompleted(0, 'whisper_stt', {
+        transcript_length: result.text.length,
+        duration_ms: duration,
+        cost
+      })
+
+      // Step 2: 儲存轉錄
+      await taskLogger.stepStarted(1, 'save_transcript')
+      await db.voiceovers.update(voiceoverId, {
+        transcript: result.text,
+        transcript_segments: result.segments
+      })
+      await taskLogger.stepCompleted(1, 'save_transcript')
+
+      await taskLogger.taskCompleted(
+        { transcript_length: result.text.length },
+        cost
+      )
+
+      return result
+
+    } catch (error) {
+      await taskLogger.taskFailed('whisper_stt', error, {
+        voiceoverId,
+        audioDuration: voiceover?.duration
+      })
+      throw error  // ✅ Fail Fast
+    }
+  }
+}
+```
+
+### 必須驗證的資料
+
+- [ ] 轉錄文字非空
+- [ ] 音檔格式正確 (mp3, wav, m4a)
+- [ ] 音檔時長與預期相符
+
+### Fail Fast 檢查清單
+
+- [x] ✅ 音檔格式錯誤時立即 throw error
+- [x] ✅ 轉錄結果為空時立即 throw error
+- [x] ✅ 記錄完整錯誤上下文 (file path, duration, error details)
+
+---
+
 ## 🐛 常見問題與解決方案
 
 ### 問題 1: API Key 無效

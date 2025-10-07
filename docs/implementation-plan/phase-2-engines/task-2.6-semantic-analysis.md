@@ -876,6 +876,133 @@ npm test -- tests/phase-2/task-2.6.e2e.test.ts
 
 ---
 
+## 📊 Logging 與錯誤處理整合
+
+> 參考: [LOGGING-STANDARDS.md](../LOGGING-STANDARDS.md)
+
+### 必須記錄的事件
+
+#### 基礎事件
+- [ ] `task_started` - 任務開始
+- [ ] `task_step_started` - 開始語意分析
+- [ ] `task_step_completed` - 分析完成
+- [ ] `task_completed` - 任務完成 (包含成本)
+- [ ] `task_failed` - 任務失敗
+
+#### AI 呼叫事件 (透過 PromptManager 自動記錄)
+- [ ] `ai_call_started` - GPT-4 呼叫開始
+- [ ] `ai_call_completed` - 分析成功
+- [ ] `ai_call_failed` - GPT-4 失敗
+- [ ] `ai_response_validation_failed` - Schema 驗證失敗
+
+### 整合程式碼範例
+
+```typescript
+class SemanticAnalysisEngine {
+  async analyze(transcript: string, userId: string) {
+    const taskLogger = createTaskLogger('semantic_analysis', userId)
+    const executionId = taskLogger.getExecutionId()
+    const validator = new DataFlowValidator(taskLogger.getLogger())
+    const callId = uuid()
+
+    try {
+      await taskLogger.taskStarted(
+        { transcript_length: transcript.length },
+        ['ai_analysis', 'save_results']
+      )
+
+      // Step 1: AI 語意分析
+      await taskLogger.stepStarted(0, 'ai_analysis')
+
+      // 透過 PromptManager 呼叫 (自動記錄 AI 呼叫與成本)
+      const { response, cost } = await promptManager.executePrompt(
+        'voiceover-processing',
+        'semantic-analysis',
+        { transcript, language: 'zh-TW' },
+        { executionId, userId, callId }
+      )
+
+      // ✅ 驗證 AI 回應 Schema
+      await validator.validateAIResponse(
+        callId,
+        'semantic_analysis',  // 在 schemas.ts 中已定義
+        response,
+        // 額外業務邏輯驗證
+        (data) => {
+          const errors = []
+
+          // 關鍵字不應該超過 20 個
+          if (data.keywords.length > 20) {
+            errors.push({
+              field: 'keywords',
+              message: 'Too many keywords (max 20)',
+              value: data.keywords.length
+            })
+          }
+
+          // topics 至少要有 1 個
+          if (data.topics.length === 0) {
+            errors.push({
+              field: 'topics',
+              message: 'Must have at least 1 topic',
+              value: data.topics.length
+            })
+          }
+
+          return errors
+        }
+      )
+
+      await taskLogger.stepCompleted(0, 'ai_analysis', {
+        topics_count: response.topics.length,
+        keywords_count: response.keywords.length,
+        tone: response.tone
+      })
+
+      // Step 2: 儲存結果
+      await taskLogger.stepStarted(1, 'save_results')
+      await db.voiceovers.update(voiceoverId, {
+        semantic_analysis: response
+      })
+      await taskLogger.stepCompleted(1, 'save_results')
+
+      await taskLogger.taskCompleted(
+        {
+          topics: response.topics.length,
+          keywords: response.keywords.length
+        },
+        cost
+      )
+
+      return response
+
+    } catch (error) {
+      await taskLogger.taskFailed('ai_analysis', error, {
+        transcript_length: transcript.length
+      })
+      throw error  // ✅ Fail Fast
+    }
+  }
+}
+```
+
+### 必須驗證的資料
+
+根據 `schemas.ts` 中的定義:
+
+- [x] `topics`: string[] (min 1, required)
+- [x] `keywords`: string[] (min 1, max 20, required)
+- [x] `tone`: 'professional' | 'casual' | 'enthusiastic' (required)
+
+### Fail Fast 檢查清單
+
+- [x] ✅ Schema 驗證失敗時立即 throw error
+- [x] ✅ 業務邏輯驗證失敗時立即 throw error
+- [x] ✅ 記錄完整 AI 回應 (用於 debug)
+- [x] ❌ 不使用預設值或 fallback
+
+---
+
 ## 🐛 常見問題與解決方案
 
 ### 常見錯誤類型速查表
