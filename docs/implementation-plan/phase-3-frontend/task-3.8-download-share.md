@@ -100,6 +100,7 @@ if (navigator.clipboard) {
 - ✅ QR Code 生成與下載 (可選)
 - ✅ 下載進度顯示
 - ✅ 優雅的錯誤處理
+- ✅ **下載與儲存成本資訊顯示**
 
 ---
 
@@ -1111,6 +1112,41 @@ export default function PreviewPage() {
                 <p className="text-sm text-muted-foreground">使用片段數</p>
                 <p className="text-sm">{job.selectedSegments.length} 個片段</p>
               </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* 成本資訊 */}
+        <Card>
+          <CardHeader>
+            <CardTitle>💰 成本資訊</CardTitle>
+            <CardDescription>
+              此影片產生的成本明細
+            </CardDescription>
+          </CardHeader>
+
+          <CardContent>
+            <div className="space-y-3">
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-muted-foreground">生成處理成本</span>
+                <span className="font-medium">$0.05 USD</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-muted-foreground">儲存成本 (每月)</span>
+                <span className="font-medium">$0.01 USD</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-muted-foreground">下載流量成本 (每次)</span>
+                <span className="font-medium">~$0.005 USD</span>
+              </div>
+              <Separator />
+              <div className="flex justify-between items-center">
+                <span className="font-semibold">累計總成本</span>
+                <span className="font-bold text-lg text-primary">$0.06 USD</span>
+              </div>
+              <p className="text-xs text-muted-foreground mt-2">
+                💡 提示: 多次下載同一影片會增加流量成本,建議妥善保存下載的影片
+              </p>
             </div>
           </CardContent>
         </Card>

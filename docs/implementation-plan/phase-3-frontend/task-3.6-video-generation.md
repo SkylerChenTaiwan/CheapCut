@@ -96,6 +96,7 @@ npm run dev
 - ✅ 即時的生成進度顯示
 - ✅ 錯誤處理與重試機制
 - ✅ 生成完成後自動跳轉預覽
+- ✅ **生成成本預估與即時顯示**
 
 ---
 
@@ -906,6 +907,42 @@ export default function GeneratePage() {
               )}
             </CardContent>
           </Card>
+
+          {/* 成本預估 */}
+          {selectedSegmentIds.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle>💰 成本預估</CardTitle>
+                <CardDescription>
+                  本次生成的預估成本
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-3">
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm text-muted-foreground">影片生成處理</span>
+                    <span className="font-medium">~$0.05 USD</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm text-muted-foreground">TTS 配音合成</span>
+                    <span className="font-medium">~$0.02 USD</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm text-muted-foreground">輸出影片儲存</span>
+                    <span className="font-medium">~$0.01 USD/月</span>
+                  </div>
+                  <Separator />
+                  <div className="flex justify-between items-center text-base">
+                    <span className="font-semibold">預估總成本</span>
+                    <span className="font-bold text-lg text-primary">~$0.08 USD</span>
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-2">
+                    💡 實際成本會根據影片長度和所選片段數量而有所調整
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
           {/* 送出按鈕 */}
           <div className="flex justify-end gap-4">

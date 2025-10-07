@@ -96,6 +96,7 @@ curl http://localhost:8080/api/materials/upload
 - ✅ 多檔案同時上傳
 - ✅ 上傳錯誤處理
 - ✅ 上傳成功後導向素材庫
+- ✅ **上傳成本資訊展示 (預估儲存成本)**
 
 ---
 
@@ -679,6 +680,19 @@ export default function UploadPage() {
           <li>分析完成後會自動標記片段和生成縮圖</li>
           <li>分析時間約 30 秒 - 2 分鐘 (依影片長度而定)</li>
         </ul>
+      </div>
+
+      {/* 成本資訊 */}
+      <div className="mt-4 p-4 bg-blue-50 dark:bg-blue-950 rounded-lg border border-blue-200 dark:border-blue-800">
+        <h3 className="font-medium mb-2 text-blue-900 dark:text-blue-100">💰 預估成本</h3>
+        <div className="text-sm text-blue-800 dark:text-blue-200 space-y-1">
+          <p>• 儲存成本: 約 $0.02 USD/GB/月</p>
+          <p>• 250MB 影片每月約 $0.005 USD</p>
+          <p>• 分析成本: 約 $0.01 USD/分鐘</p>
+          <p className="text-xs text-blue-600 dark:text-blue-300 mt-2">
+            💡 提示: 上傳後可在素材庫查看實際成本累計
+          </p>
+        </div>
       </div>
     </div>
   );
