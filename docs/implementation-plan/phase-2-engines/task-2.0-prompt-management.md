@@ -374,7 +374,167 @@ const response = await ai.chat({
 
 ---
 
-### Step 4: 實作變數替換
+### Step 4: Prompt 優化 Workflow (新增)
+
+#### 4.1 Git Workflow
+
+##### 開發環境 Prompt 修改流程
+
+1. **修改 Prompt 檔案**
+   ```bash
+   vi prompts/semantic-analysis/v2.txt
+   ```
+
+2. **本地測試**
+   ```bash
+   npm run test:prompt semantic-analysis
+   ```
+
+3. **Commit 到 Git**
+   ```bash
+   git add prompts/semantic-analysis/v2.txt
+   git commit -m "feat(prompt): 優化語意分析 Prompt v2
+
+   改進點:
+   - 加強關鍵字提取準確度
+   - 減少誤判率
+
+   測試結果:
+   - 準確率: 92% -> 95%
+   - 成本: $0.002 -> $0.0018"
+
+   git push origin main
+   ```
+
+4. **部署到正式環境**
+   ```bash
+   # 在 Cloud Run 上執行
+   git pull
+   npm run prompt:reload
+   ```
+
+##### Prompt 版本回退
+
+如果新版本效果不佳:
+```bash
+# 回退到前一版本
+git revert HEAD
+
+# 或指定版本
+git checkout <commit-hash> -- prompts/semantic-analysis/v1.txt
+
+# 重新載入
+npm run prompt:reload
+```
+
+#### 4.2 Prompt 測試框架
+
+建立 `tests/prompts/test-prompt.ts`:
+
+```typescript
+import { PromptManager } from '@/services/prompt-manager';
+
+interface PromptTestCase {
+  input: string;
+  expectedKeywords: string[];
+  expectedTone: string;
+}
+
+async function testPrompt(
+  promptName: string,
+  version: number,
+  testCases: PromptTestCase[]
+) {
+  const promptManager = new PromptManager();
+
+  const results = {
+    passed: 0,
+    failed: 0,
+    accuracy: 0,
+    totalCost: 0
+  };
+
+  for (const testCase of testCases) {
+    const result = await promptManager.execute(
+      promptName,
+      { text: testCase.input },
+      { version }
+    );
+
+    // 驗證結果
+    const keywordMatch = testCase.expectedKeywords.every(
+      k => result.keywords.includes(k)
+    );
+    const toneMatch = result.tone === testCase.expectedTone;
+
+    if (keywordMatch && toneMatch) {
+      results.passed++;
+    } else {
+      results.failed++;
+      console.log(`Failed:`, testCase.input, result);
+    }
+
+    results.totalCost += result.cost;
+  }
+
+  results.accuracy = results.passed / testCases.length;
+
+  return results;
+}
+
+// 測試案例
+const testCases: PromptTestCase[] = [
+  {
+    input: "這隻小貓咪在花園裡開心地玩耍",
+    expectedKeywords: ["貓咪", "花園", "玩耍"],
+    expectedTone: "positive"
+  },
+  // ... 更多測試案例
+];
+
+testPrompt('semantic-analysis', 2, testCases).then(results => {
+  console.log(`Accuracy: ${results.accuracy * 100}%`);
+  console.log(`Total Cost: ${results.totalCost}`);
+});
+```
+
+執行測試:
+```bash
+npm run test:prompt semantic-analysis --version=2
+```
+
+#### 4.3 正式環境快取清除機制
+
+建立 API 端點清除 Prompt 快取:
+
+```typescript
+// src/routes/admin.routes.ts
+router.post('/admin/prompts/reload',
+  authMiddleware,
+  adminOnly,
+  async (req, res) => {
+    const promptManager = PromptManager.getInstance();
+
+    // 1. 清除記憶體快取
+    promptManager.clearCache();
+
+    // 2. 清除 Redis 快取
+    await redis.del('prompt:*');
+
+    // 3. 重新載入所有 Prompt
+    await promptManager.loadAll();
+
+    res.json({
+      success: true,
+      message: '所有 Prompt 已重新載入'
+    });
+  }
+);
+```
+
+---
+
+### Step 5: 實作變數替換
 
 變數替換已經在 `PromptManager.renderPrompt()` 中實作了。
 
@@ -403,7 +563,7 @@ for (const [key, value] of Object.entries(variables)) {
 
 ---
 
-### Step 5: 建立初始 Prompt 檔案
+### Step 6: 建立初始 Prompt 檔案
 
 **需要建立的 Prompt 檔案**:
 
@@ -569,6 +729,11 @@ npm test -- tests/phase-2/task-2.0.e2e.test.ts
 - [ ] 快取機制已實作
 - [ ] 所有初始 Prompt 檔案已建立
 - [ ] 文件已撰寫
+- [ ] Git workflow 文件已建立
+- [ ] Prompt 測試框架已實作
+- [ ] 可執行 `npm run test:prompt` 測試 Prompt
+- [ ] 正式環境可透過 API 重新載入 Prompt
+- [ ] Prompt 版本記錄在 cost_records 表
 
 ### Prompt 檔案
 - [ ] `prompts/voiceover-processing/voiceover-split.md` 已建立
