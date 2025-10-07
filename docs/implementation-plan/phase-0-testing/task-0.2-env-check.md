@@ -1051,37 +1051,37 @@ npm test -- task-0.2-full-env-setup.test.ts
 完成這個 Task 後,請確認以下項目:
 
 ### 檔案建立
-- [ ] `.env.example` 已建立
-- [ ] `.gitignore` 已更新 (包含 .env)
-- [ ] `src/types/env.d.ts` 已建立
-- [ ] `src/lib/env.ts` 已建立
-- [ ] `tests/acceptance/basic/check-env-runner.ts` 已建立
-- [ ] `tests/acceptance/basic/task-0.2-verification.test.ts` 已建立
-- [ ] `tests/acceptance/feature/task-0.2-env-validation.test.ts` 已建立
-- [ ] `tests/acceptance/e2e/task-0.2-full-env-setup.test.ts` 已建立
+- [x] `.env.example` 已建立
+- [x] `.gitignore` 已更新 (包含 .env)
+- [x] `src/types/env.d.ts` 已建立
+- [x] `src/lib/env.ts` 已建立
+- [x] `tests/acceptance/basic/check-env-runner.ts` 已建立
+- [x] `tests/acceptance/basic/task-0.2-verification.test.ts` 已建立
+- [x] `tests/acceptance/feature/task-0.2-env-validation.test.ts` 已建立
+- [x] `tests/acceptance/e2e/task-0.2-full-env-setup.test.ts` 已建立
 
 ### 環境設定
-- [ ] `.env` 檔案已建立 (複製自 .env.example)
-- [ ] 所有必要的環境變數已填入
-- [ ] GCP Service Account JSON 已下載並放置
+- [x] `.env` 檔案已建立 (測試用)
+- [x] 所有必要的環境變數已填入 (測試值)
+- [x] GCP Service Account JSON mock 檔案已建立
 
 ### 服務註冊
-- [ ] Supabase 專案已建立
-- [ ] GCP 專案已建立
-- [ ] OpenAI API Key 已取得
-- [ ] Gemini API Key 已取得
+- [ ] Supabase 專案已建立 (需使用者自行註冊)
+- [ ] GCP 專案已建立 (需使用者自行註冊)
+- [ ] OpenAI API Key 已取得 (需使用者自行註冊)
+- [ ] Gemini API Key 已取得 (需使用者自行註冊)
 - [ ] Upstash Redis 已建立 (可選)
 
 ### 功能驗證
-- [ ] `npm run verify:env` 可以執行
-- [ ] 所有環境檢查都通過
-- [ ] 錯誤訊息清楚明確
+- [x] `npm run verify:env` 可以執行
+- [x] 所有環境檢查都通過
+- [x] 錯誤訊息清楚明確
 
 ### 測試驗收
-- [ ] Basic Verification 測試通過 (5/5)
-- [ ] Functional Acceptance 測試通過 (4/4)
-- [ ] E2E Acceptance 測試通過 (4/4)
-- [ ] **總計: 13/13 測試通過**
+- [x] Basic Verification 測試通過 (5/5)
+- [x] Functional Acceptance 測試通過 (4/4)
+- [x] E2E Acceptance 測試通過 (4/4)
+- [x] **總計: 13/13 測試通過**
 
 ---
 

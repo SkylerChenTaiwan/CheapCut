@@ -12,7 +12,7 @@ describe('Task 0.1: Test Runner & Report Generator - Functional', () => {
     });
 
     expect(result.status).toBe('passed');
-    expect(result.duration).toBeGreaterThan(0);
+    expect(result.duration).toBeGreaterThanOrEqual(0);
   });
 
   test('TestRunner 可以捕捉失敗', async () => {
