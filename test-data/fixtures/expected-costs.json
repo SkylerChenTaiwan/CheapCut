@@ -1,159 +1,57 @@
 {
-  "description": "預期成本數據 - 用於驗收測試時檢查成本是否在合理範圍內",
-  "version": "1.0",
-  "last_updated": "2025-10-07",
-  "baseline_costs": {
-    "replicate_api": {
-      "description": "Replicate API 基礎費用 (實際費用需以當下 API 定價為準)",
-      "per_second_estimate": 0.002,
-      "unit": "USD per second of video processed",
-      "notes": "此為估算值,實際費用可能因模型與使用量而異"
+  "apiCosts": {
+    "googleVideoAI": {
+      "perMinute": 0.025,
+      "description": "Google Video Intelligence API - Label Detection"
     },
-    "storage": {
-      "s3_storage_per_gb_month": 0.023,
-      "s3_request_put_per_1000": 0.005,
-      "s3_request_get_per_1000": 0.0004,
-      "data_transfer_out_per_gb": 0.09,
-      "unit": "USD",
-      "notes": "基於 AWS S3 標準儲存定價"
+    "openaiWhisper": {
+      "perMinute": 0.006,
+      "description": "OpenAI Whisper API - Speech to Text"
     },
-    "database": {
-      "description": "資料庫成本 (如使用 Supabase 免費方案則為 $0)",
-      "monthly_estimate": 0,
-      "unit": "USD",
-      "notes": "MVP 階段使用免費方案"
+    "geminiFlash": {
+      "per1MTokens": 0.075,
+      "avgTokensPerRequest": 2000,
+      "description": "Gemini 1.5 Flash - 語意分析與選片"
+    },
+    "gcsStorage": {
+      "perGB": 0.02,
+      "description": "Google Cloud Storage - Standard Storage (月費)"
+    },
+    "gcsEgress": {
+      "perGB": 0.12,
+      "description": "GCS Egress to Internet (下載頻寬)"
     }
   },
-  "test_scenarios": {
-    "upload_10s_video": {
-      "description": "上傳 10 秒影片 (5MB)",
-      "expected_costs": {
-        "storage": 0.000115,
-        "request": 0.000005,
-        "total_max": 0.0002
+  "scenarios": [
+    {
+      "name": "單一影片生成 - 標準場景",
+      "description": "素材 5 分鐘, 配音 1 分鐘, 生成 1 分鐘影片",
+      "breakdown": {
+        "videoAI": 0.125,
+        "whisper": 0.006,
+        "gemini": 0.00015,
+        "storage": 0.001,
+        "egress": 0.005
       },
-      "unit": "USD",
-      "tolerance": 0.0001,
-      "notes": "主要成本來自儲存空間,request 費用極低"
+      "total": 0.031,
+      "note": "這是 overall-design 中的標準成本估算"
     },
-    "edit_10s_video_simple": {
-      "description": "剪輯 10 秒影片 (簡單指令,如裁剪)",
-      "expected_costs": {
-        "api_call": 0.02,
-        "storage": 0.000115,
-        "data_transfer": 0.0005,
-        "total_max": 0.025
+    {
+      "name": "單一影片生成 - 長素材",
+      "description": "素材 30 分鐘, 配音 3 分鐘, 生成 3 分鐘影片",
+      "breakdown": {
+        "videoAI": 0.75,
+        "whisper": 0.018,
+        "gemini": 0.000375,
+        "storage": 0.005,
+        "egress": 0.015
       },
-      "unit": "USD",
-      "tolerance": 0.01,
-      "notes": "主要成本來自 Replicate API 呼叫"
+      "total": 0.79
     },
-    "edit_30s_video_medium": {
-      "description": "剪輯 30 秒影片 (中等複雜度指令)",
-      "expected_costs": {
-        "api_call": 0.06,
-        "storage": 0.00035,
-        "data_transfer": 0.0015,
-        "total_max": 0.065
-      },
-      "unit": "USD",
-      "tolerance": 0.02,
-      "notes": "成本隨影片長度與複雜度增加"
-    },
-    "edit_2m_video_complex": {
-      "description": "剪輯 2 分鐘影片 (高複雜度指令)",
-      "expected_costs": {
-        "api_call": 0.24,
-        "storage": 0.0012,
-        "data_transfer": 0.005,
-        "total_max": 0.25
-      },
-      "unit": "USD",
-      "tolerance": 0.05,
-      "notes": "長影片與複雜指令會顯著增加成本"
-    },
-    "failed_edit": {
-      "description": "剪輯失敗的情況",
-      "expected_costs": {
-        "api_call": 0.01,
-        "storage": 0.000115,
-        "total_max": 0.015
-      },
-      "unit": "USD",
-      "tolerance": 0.005,
-      "notes": "即使失敗也可能產生部分 API 費用,但應該很低"
+    {
+      "name": "批次處理 - 10 支影片",
+      "description": "10 支標準影片的總成本",
+      "total": 0.31
     }
-  },
-  "monthly_projections": {
-    "free_user_limit": {
-      "description": "免費用戶每月限制",
-      "max_edits": 3,
-      "max_total_cost": 0.075,
-      "unit": "USD",
-      "notes": "基於每次剪輯平均 $0.025 的成本"
-    },
-    "paid_user_moderate": {
-      "description": "中度使用的付費用戶",
-      "edits_per_month": 50,
-      "estimated_cost": 1.5,
-      "revenue_needed": 3.0,
-      "margin": "50%",
-      "unit": "USD"
-    },
-    "paid_user_heavy": {
-      "description": "重度使用的付費用戶",
-      "edits_per_month": 200,
-      "estimated_cost": 6.0,
-      "revenue_needed": 12.0,
-      "margin": "50%",
-      "unit": "USD"
-    }
-  },
-  "cost_validation_rules": {
-    "single_edit_max": {
-      "description": "單次剪輯的成本上限",
-      "threshold": 1.0,
-      "unit": "USD",
-      "action_if_exceeded": "ALERT - 成本異常,需要檢查",
-      "notes": "正常情況下單次剪輯不應超過此金額"
-    },
-    "cost_per_second_max": {
-      "description": "每秒影片處理成本上限",
-      "threshold": 0.01,
-      "unit": "USD per second",
-      "action_if_exceeded": "WARNING - 處理效率可能有問題",
-      "notes": "用於檢測成本效率是否正常"
-    },
-    "storage_growth_daily_max": {
-      "description": "每日儲存成本增長上限",
-      "threshold": 0.5,
-      "unit": "USD per day",
-      "action_if_exceeded": "WARNING - 儲存成本增長過快,檢查是否有檔案未清理",
-      "notes": "MVP 階段不應該有大量儲存累積"
-    }
-  },
-  "testing_guidelines": {
-    "cost_verification_methods": [
-      "每次測試後記錄實際 API 呼叫次數與費用",
-      "比對實際費用與預期費用,誤差應在 tolerance 範圍內",
-      "檢查是否有非預期的 API 呼叫 (如重試、重複呼叫)",
-      "驗證儲存空間使用是否合理 (檔案是否正確清理)"
-    ],
-    "cost_tracking_tools": [
-      "Replicate Dashboard - 檢查 API 使用量與費用",
-      "AWS Cost Explorer - 檢查 S3 與其他 AWS 服務費用",
-      "應用內部 logging - 記錄每次操作的預估費用"
-    ],
-    "alerts_to_implement": [
-      "單次操作成本超過閾值時發送警告",
-      "每日總成本超過預算時發送警告",
-      "成本效率低於預期時發送警告"
-    ]
-  },
-  "notes": [
-    "這些數字都是估算值,實際成本需要根據真實使用情況調整",
-    "Replicate API 定價可能隨時變動,需定期更新此檔案",
-    "tolerance 欄位用於驗收測試,實際費用在此範圍內視為通過",
-    "建議每週檢查一次實際成本數據,並更新此檔案的預期值"
   ]
 }

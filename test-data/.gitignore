@@ -1,6 +1,20 @@
-# 測試影片檔案不加入 git (檔案太大)
-videos/
+# 忽略所有影片和音訊檔案(太大,不適合 commit)
+videos/**/*.mp4
+videos/**/*.mov
+videos/**/*.avi
+videos/**/*.mkv
+audio/**/*.mp3
+audio/**/*.wav
+audio/**/*.m4a
 
-# 測試結果保留在本地
-results/*
-!results/.gitkeep
+# 忽略測試結果(每次執行都會重新產生)
+results/**/*.json
+results/**/*.html
+
+# 保留 fixtures(JSON 檔案很小,可以 commit)
+!fixtures/**/*.json
+
+# 保留 README 與腳本(這些是程式碼的一部分)
+!README.md
+!scripts/**/*.ts
+!scripts/**/*.sh
