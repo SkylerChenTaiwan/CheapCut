@@ -241,12 +241,117 @@ ffmpeg -i video.mp4 -i voiceover.mp3 \
 - FFmpeg (已在 Task 2.11 安裝)
 - Cloud Storage 存取權限
 - 足夠的暫存空間 (至少 2GB)
+- **Cloud Run 執行環境設定** (詳見下方 Timeout 風險說明)
 
 ### 資料庫依賴
 需要查詢以下資料表:
 - `materials` - 取得素材檔案的 GCS URL
 - `material_segments` - 取得片段資訊
 - `video_generation_jobs` - 儲存合成進度
+
+---
+
+## ⚠️ Timeout 風險評估與設定
+
+### 問題說明
+
+根據 `docs/overall-design/02-key-flows.md` 的時間估算:
+- 90 秒影片的合成，最差情況需要 **12 分鐘**
+- 其中「自動剪輯合成」階段可能需要 **8 分鐘**
+
+### 已採用的解決方案
+
+✅ **HTTP Request Timeout 已解決**:
+- API 使用異步處理 (第 734 行)
+- 立即返回 response，不等待合成完成
+- 前端透過 `GET /api/composition/status/:job_id` 輪詢狀態
+
+⚠️ **需要設定 Cloud Run Execution Timeout**:
+
+雖然 HTTP request 不會 timeout，但 Cloud Run 的**執行環境本身有 timeout 限制**:
+- 預設: 5 分鐘
+- 最大: 60 分鐘 (第二代) / 15 分鐘 (第一代)
+
+### 必要設定
+
+在部署 Cloud Run 時，需要設定足夠的 timeout:
+
+```yaml
+# service.yaml
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: cheapcut-api
+spec:
+  template:
+    spec:
+      timeoutSeconds: 900  # 15 分鐘
+      containers:
+        - image: gcr.io/PROJECT_ID/cheapcut-api
+          resources:
+            limits:
+              memory: 2Gi
+              cpu: 2
+```
+
+或使用 gcloud 指令:
+```bash
+gcloud run deploy cheapcut-api \
+  --timeout=900 \
+  --memory=2Gi \
+  --cpu=2
+```
+
+### 時間估算參考
+
+| 影片長度 | 素材分析 | 配音處理 | AI 選片 | 影片渲染 | 總計 | Cloud Run 設定 |
+|---------|---------|---------|---------|---------|------|--------------|
+| 30 秒 | 90s | 30s | 30s | 120s | ~4.5 分鐘 | 600s (10 分鐘) ✅ |
+| 60 秒 | 90s | 60s | 60s | 240s | ~7.5 分鐘 | 900s (15 分鐘) ✅ |
+| 90 秒 | 90s | 90s | 90s | 360s | ~10.5 分鐘 | 900s (15 分鐘) ⚠️ |
+
+**建議設定**: `timeoutSeconds: 900` (15 分鐘) 足以處理 90 秒以內的影片
+
+### 超過 15 分鐘怎麼辦？
+
+如果未來需要處理更長的影片，有以下選項:
+
+**選項 1: 使用 Cloud Tasks / Pub/Sub** (建議)
+```typescript
+// 將長時間任務交給 Cloud Tasks
+await cloudTasks.createTask({
+  queue: 'video-composition',
+  task: {
+    httpRequest: {
+      url: 'https://worker.example.com/compose',
+      body: Buffer.from(JSON.stringify({ jobId }))
+    }
+  }
+});
+```
+
+**選項 2: 使用 Cloud Run Jobs** (適合批次處理)
+```bash
+gcloud run jobs create video-composer \
+  --image=gcr.io/PROJECT_ID/composer \
+  --max-retries=3 \
+  --task-timeout=3600  # 1 小時
+```
+
+**選項 3: 切換到 Cloud Functions (2nd gen)**
+- 支援最長 60 分鐘執行時間
+
+### 現階段結論
+
+✅ **目前的設計是安全的**:
+1. API 已使用異步處理，不會有 HTTP timeout
+2. 只要設定 `timeoutSeconds: 900`，可以處理 90 秒以內的影片
+3. 有狀態查詢機制，前端可以輪詢進度
+
+⚠️ **需要在部署時記得設定**:
+- Cloud Run timeout: 900 秒
+- Memory: 2Gi
+- CPU: 2
 
 ---
 

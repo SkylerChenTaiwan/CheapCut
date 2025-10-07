@@ -7,7 +7,7 @@
 | **Task ID** | 3.6 |
 | **Task 名稱** | 影片生成介面 |
 | **所屬 Phase** | Phase 3: 前端開發 |
-| **預估時間** | 3-4 小時 (介面設計 1.5h + 狀態管理 1h + 測試 1h + 整合 0.5h) |
+| **預估時間** | 4-5 小時 (介面設計 1.5h + 進度追蹤 1h + 狀態管理 1h + 測試 1h + 整合 0.5h) |
 | **難度** | ⭐⭐⭐ 中高 |
 | **前置 Task** | Task 3.5 (配音錄製介面) |
 
@@ -93,7 +93,9 @@ npm run dev
 
 - ✅ 直覺的素材片段選擇介面
 - ✅ 配音與素材的時間軸對齊
-- ✅ 即時的生成進度顯示
+- ✅ **即時的生成進度顯示 (百分比 + 階段)**
+- ✅ **處理階段指示 (步驟 X / 總步驟數)**
+- ✅ **預估剩餘時間顯示**
 - ✅ 錯誤處理與重試機制
 - ✅ 生成完成後自動跳轉預覽
 - ✅ **生成成本預估與即時顯示**
@@ -276,6 +278,10 @@ export interface VideoGenerationJob {
   selectedSegments: SelectedSegment[];
   outputVideoUrl?: string;
   progress?: number; // 0-100
+  currentStep?: string; // 當前處理階段描述
+  stepIndex?: number; // 當前步驟索引 (0-based)
+  totalSteps?: number; // 總步驟數
+  estimatedTimeRemaining?: number; // 預估剩餘時間 (秒)
   createdAt: string;
   completedAt?: string;
   error?: string;
@@ -543,7 +549,112 @@ export function SegmentSelector({
 
 ---
 
-### 步驟 6: 建立生成進度元件
+### 步驟 6: 建立進度追蹤 Hook
+
+建立 `hooks/useTaskProgress.ts`:
+
+```typescript
+/**
+ * 任務進度追蹤 Hook
+ *
+ * 功能:
+ * - 輪詢任務狀態
+ * - 追蹤處理階段
+ * - 計算預估時間
+ */
+
+'use client';
+
+import useSWR from 'swr';
+import { getJobStatus } from '@/lib/api/video';
+import type { VideoGenerationJob } from '@/lib/types';
+
+interface UseTaskProgressOptions {
+  onCompleted?: (job: VideoGenerationJob) => void;
+  onFailed?: (job: VideoGenerationJob) => void;
+  pollInterval?: number; // 輪詢間隔 (毫秒)
+}
+
+export function useTaskProgress(
+  jobId: string | null,
+  options: UseTaskProgressOptions = {}
+) {
+  const { onCompleted, onFailed, pollInterval = 2000 } = options;
+
+  const { data, error, mutate } = useSWR(
+    jobId ? `/api/video/job/${jobId}` : null,
+    () => getJobStatus(jobId!),
+    {
+      refreshInterval: (data) => {
+        // 如果任務完成或失敗,停止輪詢
+        const status = data?.data?.status;
+        if (status === 'completed' || status === 'failed') {
+          return 0;
+        }
+        // 否則定期輪詢
+        return pollInterval;
+      },
+      onSuccess: (data) => {
+        const job = data?.data;
+        if (job?.status === 'completed' && onCompleted) {
+          onCompleted(job);
+        } else if (job?.status === 'failed' && onFailed) {
+          onFailed(job);
+        }
+      },
+    }
+  );
+
+  const job = data?.data;
+
+  // 計算格式化的剩餘時間
+  const formatTimeRemaining = (seconds?: number): string => {
+    if (!seconds) return '計算中...';
+
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+
+    if (mins > 0) {
+      return `約 ${mins} 分 ${secs} 秒`;
+    }
+    return `約 ${secs} 秒`;
+  };
+
+  // 取得當前階段描述
+  const getCurrentStepDescription = (): string => {
+    if (!job) return '';
+
+    if (job.currentStep) {
+      return job.currentStep;
+    }
+
+    // Fallback: 根據進度百分比推測階段
+    const progress = job.progress || 0;
+    if (progress < 20) return '準備處理...';
+    if (progress < 40) return '分析素材中...';
+    if (progress < 60) return '選片中...';
+    if (progress < 80) return '渲染影片中...';
+    if (progress < 100) return '上傳影片中...';
+    return '完成';
+  };
+
+  return {
+    job,
+    error,
+    isLoading: !data && !error,
+    progress: job?.progress || 0,
+    currentStep: getCurrentStepDescription(),
+    stepIndex: job?.stepIndex ?? 0,
+    totalSteps: job?.totalSteps ?? 5,
+    estimatedTimeRemaining: formatTimeRemaining(job?.estimatedTimeRemaining),
+    refresh: mutate,
+  };
+}
+```
+
+---
+
+### 步驟 7: 建立生成進度元件
 
 建立 `components/video/GenerationProgress.tsx`:
 
@@ -553,20 +664,20 @@ export function SegmentSelector({
  *
  * 功能:
  * - 顯示當前生成狀態
- * - 顯示進度條
+ * - 顯示進度條與百分比
+ * - 顯示處理階段 (stepIndex / totalSteps)
+ * - 顯示預估剩餘時間
  * - 輪詢更新狀態
  */
 
 'use client';
 
-import { useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Loader2, CheckCircle2, XCircle } from 'lucide-react';
-import useSWR from 'swr';
-import { getJobStatus } from '@/lib/api/video';
+import { Loader2, CheckCircle2, XCircle, Clock, Layers } from 'lucide-react';
+import { useTaskProgress } from '@/hooks/useTaskProgress';
 import type { VideoGenerationJob } from '@/lib/types';
 
 interface GenerationProgressProps {
@@ -580,33 +691,19 @@ export function GenerationProgress({
   onCompleted,
   onFailed,
 }: GenerationProgressProps) {
-  // 使用 SWR 輪詢任務狀態
-  const { data, error } = useSWR(
-    jobId ? `/api/video/job/${jobId}` : null,
-    () => getJobStatus(jobId),
-    {
-      refreshInterval: (data) => {
-        // 如果任務完成或失敗,停止輪詢
-        const status = data?.data?.status;
-        if (status === 'completed' || status === 'failed') {
-          return 0;
-        }
-        // 否則每 2 秒輪詢一次
-        return 2000;
-      },
-    }
-  );
-
-  const job = data?.data;
-
-  // 監聽任務完成
-  useEffect(() => {
-    if (job?.status === 'completed' && onCompleted) {
-      onCompleted(job);
-    } else if (job?.status === 'failed' && onFailed) {
-      onFailed(job);
-    }
-  }, [job?.status]);
+  const {
+    job,
+    error,
+    isLoading,
+    progress,
+    currentStep,
+    stepIndex,
+    totalSteps,
+    estimatedTimeRemaining,
+  } = useTaskProgress(jobId, {
+    onCompleted,
+    onFailed,
+  });
 
   if (error) {
     return (
@@ -619,7 +716,7 @@ export function GenerationProgress({
     );
   }
 
-  if (!job) {
+  if (isLoading || !job) {
     return (
       <Card>
         <CardContent className="flex items-center justify-center py-12">
@@ -640,7 +737,7 @@ export function GenerationProgress({
       label: '生成中',
       icon: Loader2,
       variant: 'default' as const,
-      description: '正在生成影片,請稍候...',
+      description: currentStep || '正在生成影片,請稍候...',
     },
     completed: {
       label: '完成',
@@ -658,7 +755,6 @@ export function GenerationProgress({
 
   const config = statusConfig[job.status];
   const Icon = config.icon;
-  const progress = job.progress || 0;
 
   return (
     <Card>
@@ -672,15 +768,66 @@ export function GenerationProgress({
         <CardDescription>{config.description}</CardDescription>
       </CardHeader>
 
-      <CardContent className="space-y-4">
-        {/* 進度條 */}
+      <CardContent className="space-y-6">
+        {/* 進度條與百分比 */}
         {(job.status === 'pending' || job.status === 'processing') && (
           <div className="space-y-2">
             <div className="flex items-center justify-between text-sm">
-              <span className="text-muted-foreground">進度</span>
+              <span className="text-muted-foreground">整體進度</span>
               <span className="font-medium">{progress}%</span>
             </div>
-            <Progress value={progress} />
+            <Progress value={progress} className="h-2" />
+          </div>
+        )}
+
+        {/* 當前階段資訊 */}
+        {job.status === 'processing' && (
+          <div className="space-y-4">
+            {/* 階段指示 */}
+            <div className="flex items-center gap-3 p-4 bg-muted/50 rounded-lg">
+              <Layers className="h-5 w-5 text-primary" />
+              <div className="flex-1">
+                <div className="text-sm font-medium">{currentStep}</div>
+                <div className="text-xs text-muted-foreground mt-1">
+                  步驟 {stepIndex + 1} / {totalSteps}
+                </div>
+              </div>
+            </div>
+
+            {/* 預估剩餘時間 */}
+            {job.estimatedTimeRemaining && (
+              <div className="flex items-center gap-3 p-4 bg-muted/50 rounded-lg">
+                <Clock className="h-5 w-5 text-muted-foreground" />
+                <div className="flex-1">
+                  <div className="text-sm font-medium">預估剩餘時間</div>
+                  <div className="text-xs text-muted-foreground mt-1">
+                    {estimatedTimeRemaining}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* 步驟進度條 */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between text-xs text-muted-foreground">
+                <span>處理階段</span>
+                <span>{stepIndex + 1} / {totalSteps}</span>
+              </div>
+              <div className="flex gap-1">
+                {Array.from({ length: totalSteps }).map((_, index) => (
+                  <div
+                    key={index}
+                    className={`h-1.5 flex-1 rounded-full transition-colors ${
+                      index < stepIndex
+                        ? 'bg-primary'
+                        : index === stepIndex
+                        ? 'bg-primary/50 animate-pulse'
+                        : 'bg-muted'
+                    }`}
+                  />
+                ))}
+              </div>
+            </div>
           </div>
         )}
 
@@ -698,7 +845,7 @@ export function GenerationProgress({
         </div>
 
         {/* 任務資訊 */}
-        <div className="space-y-1 text-sm">
+        <div className="space-y-2 text-sm border-t pt-4">
           <div className="flex justify-between">
             <span className="text-muted-foreground">任務 ID</span>
             <span className="font-mono text-xs">{job.id}</span>
@@ -722,7 +869,7 @@ export function GenerationProgress({
 
 ---
 
-### 步驟 7: 建立生成頁面
+### 步驟 8: 建立生成頁面
 
 建立 `app/(main)/generate/page.tsx`:
 
@@ -969,7 +1116,7 @@ export default function GeneratePage() {
 
 ---
 
-### 步驟 8: 更新導航連結
+### 步驟 9: 更新導航連結
 
 更新主頁面或導航欄,加入生成頁面的連結。
 
@@ -986,7 +1133,7 @@ export default function GeneratePage() {
 
 ---
 
-### 步驟 9: 測試執行
+### 步驟 10: 測試執行
 
 ```bash
 # 確保後端 API 正在運行
@@ -1097,17 +1244,21 @@ npm test -- task-3.6-e2e.test.ts
 - [ ] shadcn/ui 額外元件已安裝
 
 ### 檔案建立
-- [ ] `lib/types/index.ts` 已更新
+- [ ] `lib/types/index.ts` 已更新 (加入進度追蹤欄位)
 - [ ] `lib/api/video.ts` 已建立
 - [ ] `lib/schemas/video-generation.ts` 已建立
+- [ ] `hooks/useTaskProgress.ts` 已建立 (進度追蹤 Hook)
 - [ ] `components/video/SegmentSelector.tsx` 已建立
-- [ ] `components/video/GenerationProgress.tsx` 已建立
+- [ ] `components/video/GenerationProgress.tsx` 已建立 (含階段顯示)
 - [ ] `app/(main)/generate/page.tsx` 已建立
 
 ### 功能驗證
 - [ ] 可以選擇素材片段
 - [ ] 可以送出生成請求
-- [ ] 生成進度正確顯示
+- [ ] 生成進度正確顯示 (百分比)
+- [ ] **處理階段正確顯示 (stepIndex / totalSteps)**
+- [ ] **預估剩餘時間正確顯示**
+- [ ] **步驟進度條正確運作**
 - [ ] 狀態輪詢正確運作
 - [ ] 生成完成後正確跳轉
 - [ ] 錯誤處理完善
@@ -1130,6 +1281,9 @@ npm test -- task-3.6-e2e.test.ts
 | `Validation error` | 表單驗證失敗 | 檢查 Zod Schema 定義 |
 | `Network Error` | API 無法連線 | 確認後端服務運行中 |
 | `Job not found` | 任務 ID 錯誤 | 檢查任務建立是否成功 |
+| 進度不更新 | 輪詢未啟動 | 檢查 SWR refreshInterval 設定 |
+| 階段不顯示 | 後端未回傳階段資訊 | 使用 Fallback 邏輯或修正後端 |
+| 預估時間不準 | 後端計算邏輯問題 | 檢查後端時間估算算法 |
 
 ---
 
@@ -1288,7 +1442,67 @@ app.use(cors({
 
 ---
 
-### 問題 5: TypeScript 型別錯誤
+### 問題 5: 進度階段不顯示或不準確
+
+**問題**: 進度條有更新,但看不到「分析素材中」等階段描述
+
+**解決方案:**
+
+檢查後端 API 是否回傳階段資訊:
+
+```bash
+# 測試 API 回傳內容
+curl http://localhost:8080/api/video/job/{jobId}
+
+# 應該包含這些欄位:
+# {
+#   "data": {
+#     "progress": 45,
+#     "currentStep": "渲染影片中...",  ← 階段描述
+#     "stepIndex": 2,                  ← 當前步驟索引
+#     "totalSteps": 5,                 ← 總步驟數
+#     "estimatedTimeRemaining": 120    ← 預估剩餘秒數
+#   }
+# }
+```
+
+**如果後端沒有回傳這些欄位**:
+
+Hook 會使用 Fallback 邏輯,根據進度百分比推測階段:
+- 0-20%: 準備處理
+- 20-40%: 分析素材
+- 40-60%: 選片
+- 60-80%: 渲染影片
+- 80-100%: 上傳影片
+
+確認 `useTaskProgress.ts` 的 `getCurrentStepDescription` 函式正常運作:
+
+```typescript
+// 加入 console.log 除錯
+const getCurrentStepDescription = (): string => {
+  console.log('Job data:', job); // ← 檢查 job 資料
+
+  if (job?.currentStep) {
+    console.log('Using API step:', job.currentStep);
+    return job.currentStep;
+  }
+
+  const progress = job?.progress || 0;
+  console.log('Using fallback for progress:', progress);
+  // ... fallback 邏輯
+};
+```
+
+**驗證階段顯示是否正確**:
+
+在瀏覽器開發者工具中檢查:
+1. Network 面板 → 找到 `/api/video/job/{jobId}` 請求
+2. 查看 Response 是否包含 `currentStep`, `stepIndex`, `totalSteps`
+3. Console 面板 → 查看是否有 Hook 的除錯訊息
+
+---
+
+### 問題 6: TypeScript 型別錯誤
 
 **錯誤訊息:**
 ```
