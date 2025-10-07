@@ -281,6 +281,9 @@ npx shadcn-ui@latest add card
 
 # 安裝 Toast 通知元件
 npx shadcn-ui@latest add toast
+
+# 安裝 Alert 元件 (錯誤顯示用)
+npx shadcn-ui@latest add alert
 ```
 
 **為什麼需要這些**:
@@ -288,6 +291,7 @@ npx shadcn-ui@latest add toast
 - Input: 表單輸入
 - Card: 卡片式佈局 (素材展示、影片預覽等)
 - Toast: 操作回饋通知
+- Alert: 錯誤訊息顯示 (支援 Fail Fast 哲學)
 
 ---
 
@@ -500,7 +504,127 @@ export function apiDelete<T>(
 
 ---
 
-### 步驟 7: 建立型別定義
+### 步驟 7: 錯誤處理 UI 設計
+
+建立 `components/ui/error-display.tsx`:
+
+```typescript
+/**
+ * ErrorDisplay 元件
+ *
+ * 為什麼需要這個?
+ * - 確保 Fail Fast 哲學能夠在前端正確呈現
+ * - 統一的錯誤顯示介面
+ * - 讓用戶清楚知道發生了什麼問題
+ */
+
+import { AlertCircle, XCircle } from "lucide-react";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+
+interface ErrorDisplayProps {
+  error: Error | string;
+  title?: string;
+  onRetry?: () => void;
+}
+
+export function ErrorDisplay({ error, title = "發生錯誤", onRetry }: ErrorDisplayProps) {
+  const errorMessage = typeof error === 'string' ? error : error.message;
+
+  return (
+    <Alert variant="destructive" className="my-4">
+      <XCircle className="h-4 w-4" />
+      <AlertTitle>{title}</AlertTitle>
+      <AlertDescription className="space-y-2">
+        <p>{errorMessage}</p>
+        {onRetry && (
+          <button
+            onClick={onRetry}
+            className="text-sm underline hover:no-underline"
+          >
+            重試
+          </button>
+        )}
+      </AlertDescription>
+    </Alert>
+  );
+}
+
+/**
+ * 頁面級錯誤邊界元件
+ * 用於捕捉整個頁面的 React 錯誤
+ */
+interface ErrorBoundaryProps {
+  children: React.ReactNode;
+  fallback?: React.ReactNode;
+}
+
+export class ErrorBoundary extends React.Component<
+  ErrorBoundaryProps,
+  { hasError: boolean; error?: Error }
+> {
+  constructor(props: ErrorBoundaryProps) {
+    super(props);
+    this.state = { hasError: false };
+  }
+
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    console.error('ErrorBoundary caught:', error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      if (this.props.fallback) {
+        return this.props.fallback;
+      }
+
+      return (
+        <div className="flex items-center justify-center min-h-screen p-4">
+          <ErrorDisplay
+            error={this.state.error || '未知錯誤'}
+            title="頁面載入失敗"
+            onRetry={() => window.location.reload()}
+          />
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
+}
+```
+
+**為什麼要這樣設計?**
+- `ErrorDisplay`: 用於顯示 API 錯誤、驗證錯誤等預期內的錯誤
+- `ErrorBoundary`: 用於捕捉 React 組件樹中的未預期錯誤
+- 符合 Fail Fast 哲學: 明確顯示錯誤,不使用 fallback 掩蓋問題
+- 提供重試選項,讓用戶可以嘗試恢復
+
+**使用範例**:
+```typescript
+// API 錯誤處理
+try {
+  await apiCall('/api/materials');
+} catch (error) {
+  return <ErrorDisplay error={error} onRetry={() => refetch()} />;
+}
+
+// 頁面級錯誤邊界
+export default function Layout({ children }) {
+  return (
+    <ErrorBoundary>
+      {children}
+    </ErrorBoundary>
+  );
+}
+```
+
+---
+
+### 步驟 8: 建立型別定義
 
 建立 `lib/types/index.ts`:
 
@@ -595,7 +719,7 @@ export interface ApiError {
 
 ---
 
-### 步驟 8: 建立全域佈局
+### 步驟 9: 建立全域佈局
 
 修改 `app/layout.tsx`:
 
@@ -630,7 +754,7 @@ export default function RootLayout({
 
 ---
 
-### 步驟 9: 建立首頁
+### 步驟 10: 建立首頁
 
 修改 `app/page.tsx`:
 
@@ -670,7 +794,7 @@ export default function Home() {
 
 ---
 
-### 步驟 10: 測試執行
+### 步驟 11: 測試執行
 
 ```bash
 # 啟動開發伺服器
@@ -784,6 +908,7 @@ npm test -- task-3.1-e2e.test.ts
 ### 核心檔案
 - [ ] `lib/api/client.ts` 已建立
 - [ ] `lib/types/index.ts` 已建立
+- [ ] `components/ui/error-display.tsx` 已建立 (錯誤處理 UI)
 - [ ] `app/layout.tsx` 已設定
 - [ ] `app/page.tsx` 已建立
 - [ ] `.env.local` 已設定
@@ -793,6 +918,7 @@ npm test -- task-3.1-e2e.test.ts
 - [ ] Input 元件已安裝
 - [ ] Card 元件已安裝
 - [ ] Toast 元件已安裝
+- [ ] Alert 元件已安裝 (錯誤顯示用)
 
 ### 功能驗證
 - [ ] `npm run dev` 可以啟動
